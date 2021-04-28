@@ -3,14 +3,13 @@ import random
 import json
 import os
 import itertools
-from scipy.misc import imread, imresize
 import tensorflow as tf
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .data_utils import (annotation_jitter, annotation_to_h5)
-from .annolist import AnnotationLib as al
-from .rect import Rect
+from include.utils.data_utils import annotation_jitter, annotation_to_h5
+from include.utils.annolist import AnnotationLib as al
+from include.utils.rect import Rect
 
 def get_dimensions(corners):
     assert corners.shape == (3, 8)
@@ -100,7 +99,7 @@ def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=F
     all_rects_r = [r for row in all_rects for cell in row for r in cell]
    
     if use_stitching:
-        from stitch_wrapper import stitch_rects
+        from .stitch_wrapper import stitch_rects
         acc_rects = stitch_rects(all_rects, tau)
     else:
         acc_rects = all_rects_r
@@ -159,7 +158,7 @@ def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners
 
     all_rects_r = [r for row in all_rects for cell in row for r in cell] 
     if use_stitching:
-        from utils.stitch_wrapper import stitch_rects
+        from include.utils.stitch_wrapper import stitch_rects
         acc_rects = stitch_rects(all_rects, tau)
     else:
         acc_rects = all_rects_r
@@ -206,7 +205,8 @@ def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners
 def to_x1y1x2y2(box):
     w = tf.maximum(box[:, 2:3], 1)
     h = tf.maximum(box[:, 3:4], 1)
-
+    x1 = box[:, 0:1] - w / 2
+    x2 = box[:, 0:1] + w / 2
     y1 = box[:, 1:2] - h / 2
     y2 = box[:, 1:2] + h / 2
     return tf.concat(axis=1, values=[x1, y1, x2, y2])

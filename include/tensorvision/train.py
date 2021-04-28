@@ -12,9 +12,7 @@ import logging
 import numpy as np
 import os.path
 import sys
-
-import scipy as scp
-import scipy.misc
+import imageio
 
 # configure logging
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
@@ -32,8 +30,8 @@ import tensorflow as tf
 
 import string
 
-import tensorvision.utils as utils
-import tensorvision.core as core
+import include.tensorvision.utils as utils
+import include.tensorvision.core as core
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -70,6 +68,7 @@ def initialize_training_folder(hypes, files_dir="model_files", logging=True):
     hypes : dict
         Hyperparameters
     """
+    print('*****the hypes*****', hypes)
     target_dir = os.path.join(hypes['dirs']['output_dir'], files_dir)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
@@ -151,7 +150,7 @@ def _write_images_to_disk(hypes, images, step):
         os.mkdir(image_dir)
     for name, image in images:
         file_name = os.path.join(image_dir, name)
-        scp.misc.imsave(file_name, image)
+        imageio.imsave(file_name, image)
 
 
 def _print_eval_dict(eval_names, eval_results, prefix=''):
@@ -288,7 +287,7 @@ def run_training(hypes, modules, tv_graph, tv_sess, start_step=0):
 
                 name = str(n % 10) + '_' + images[0][0]
                 image_file = os.path.join(hypes['dirs']['image_dir'], name)
-                scp.misc.imsave(image_file, images[0][1])
+                imageio.imsave(image_file, images[0][1])
                 n = n + 1
 
             logging.info('Raw Results:')
@@ -360,7 +359,7 @@ def do_training(hypes):
     modules = utils.load_modules_from_hypes(hypes)
 
     # Tell TensorFlow that the model will be built into the default Graph.
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
 
         # build the graph based on the loaded modules
         with tf.name_scope("Queues"):

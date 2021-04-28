@@ -15,9 +15,11 @@ from PIL import Image, ImageEnhance
 import numpy as np
 
 import scipy as scp
-import scipy.misc
+import imageio
 import matplotlib.pyplot as plt
-from scipy.misc import imread, imresize
+from imageio import imread
+from skimage.transform import resize
+from PIL import Image
 from skimage.util import random_noise
 from skimage.filters import gaussian
 from skimage.exposure import rescale_intensity
@@ -25,7 +27,7 @@ from skimage.exposure import rescale_intensity
 
 import tensorflow as tf
 
-from include.utils.data_utils import (annotation_jitter, annotation_to_h5)
+from include.utils.data_utils import annotation_jitter, annotation_to_h5
 from include.utils.annolist import AnnotationLib as AnnoLib
 from include.utils.rect import Rect
 
@@ -247,7 +249,8 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             anno = AnnoLib.Annotation()
             anno.rects = rect_list
 
-            im = scp.misc.imread(image_file)
+            im = imageio.imread(image_file)
+
             if im.shape[2] == 4:
                 im = im[:, :, :3]
            
@@ -257,14 +260,12 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
                 im = _noise(_enhance(im))
                # _vis(im, anno, index)
              
-            anno = _rescale_boxes(im.shape, anno,
-                                          hypes["image_height"],
-                                          hypes["image_width"])
-            im = imresize(
-                    im, (hypes["image_height"], hypes["image_width"]),
-                    interp='cubic')
+            anno = _rescale_boxes(im.shape, anno, hypes["image_height"], hypes["image_width"])
+            # im = resize(
+            #         im, (hypes["image_height"], hypes["image_width"]))
 
-       
+            im = Image.fromarray(im).resize(size=(hypes["image_width"], hypes["image_height"]))
+
             pos_list = [rect for rect in anno.rects if rect.classID == 1]
             pos_anno = fake_anno(pos_list)
             # boxes: [1, grid_height*grid_width, 11, max_len, 1]
@@ -370,7 +371,7 @@ def start_enqueuing_threads(hypes, q, phase, sess):
                           jitter={'train': hypes['solver']['use_jitter'],
                                   'val': False}[phase])
 
-    data = gen.next()
+    data = next(gen) # gen.next()
     sess.run(enqueue_op, feed_dict=make_feed(data))
     t = threading.Thread(target=thread_loop,
                          args=(sess, enqueue_op, gen))

@@ -14,9 +14,10 @@ import matplotlib.cm as cm
 
 # https://github.com/tensorflow/tensorflow/issues/2034#issuecomment-220820070
 import numpy as np
-import scipy.misc
 import sys
 import struct
+import imageio
+from PIL import Image
 
 from six.moves import urllib
 
@@ -378,7 +379,7 @@ def overlay_segmentation(input_image, segmentation, color_dict):
         The image overlayed with the segmenation
     """
     width, height = segmentation.shape
-    output = scipy.misc.toimage(segmentation)
+    output = Image.fromarray(segmentation)
     output = output.convert('RGBA')
     for x in range(0, width):
         for y in range(0, height):
@@ -387,7 +388,7 @@ def overlay_segmentation(input_image, segmentation, color_dict):
             elif 'default' in color_dict:
                 output.putpixel((y, x), color_dict['default'])
 
-    background = scipy.misc.toimage(input_image)
+    background = Image.fromarray(input_image)
     background.paste(output, box=None, mask=output)
 
     return np.array(background)
@@ -418,9 +419,9 @@ def fast_overlay(input_image, segmentation, color=[0, 255, 0, 127]):
     segmentation = segmentation.reshape(shape[0], shape[1], 1)
 
     output = np.dot(segmentation, color)
-    output = scipy.misc.toimage(output, mode="RGBA")
+    output = Image.fromarray(output, mode="RGBA")
 
-    background = scipy.misc.toimage(input_image)
+    background = Image.fromarray(input_image)
     background.paste(output, box=None, mask=output)
 
     return np.array(background)
@@ -594,7 +595,7 @@ def load_segmentation_mask(hypes, gt_image_path):
     is not in RGB mode it will get converted to RGB. This is important to know
     for the colors in hypes['classes'].
     """
-    img = scipy.misc.imread(gt_image_path, mode='RGB')
+    img = imageio.imread(gt_image_path, mode='RGB') #scipy.misc.imread(gt_image_path, mode='RGB')
 
     # map colors to classes
     color2class_dict, default_class = get_color2class(hypes)

@@ -23,7 +23,7 @@ Please cite this paper if you find the repository helpful:
 
 ### Prerequisites
 - Ubuntu 20.04
-- Python 3.8
+- Python 3.7
 - Tensorflow 1.4
 
 ### Install

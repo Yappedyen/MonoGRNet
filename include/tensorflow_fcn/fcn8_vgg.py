@@ -35,7 +35,7 @@ class FCN8VGG:
             logging.error(("File {} not found".format(vgg16_npy_path)))
             sys.exit(1)
         with open(vgg16_npy_path, 'rb') as file:
-            self.data_dict = pickle.load(file)#, encoding='latin1')
+            self.data_dict = pickle.load(file, encoding='latin1')#, encoding='latin1')
         self.wd = 1e-5
         print("pkl file loaded")
 
@@ -136,8 +136,8 @@ class FCN8VGG:
         return depth_head, location_head, corners_head
 
     def _max_pool(self, bottom, name, debug):
-        pool = tf.nn.max_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                              padding='SAME', name=name)
+        pool = tf.nn.max_pool2d(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+                                padding='SAME', name=name)
 
         if debug:
             pool = tf.Print(pool, [tf.shape(pool)],
@@ -513,10 +513,10 @@ def _variable_summaries(var):
         logging.info("Creating Summary for: %s" % name)
         with tf.name_scope('summaries'):
             mean = tf.reduce_mean(var)
-            tf.summary.scalar(name + '/mean', mean)
+            tf.compat.v1.summary.scalar(name + '/mean', mean)
             with tf.name_scope('stddev'):
                 stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
-            tf.summary.scalar(name + '/sttdev', stddev)
-            tf.summary.scalar(name + '/max', tf.reduce_max(var))
-            tf.summary.scalar(name + '/min', tf.reduce_min(var))
+            tf.compat.v1.summary.scalar(name + '/sttdev', stddev)
+            tf.compat.v1.summary.scalar(name + '/max', tf.reduce_max(var))
+            tf.compat.v1.summary.scalar(name + '/min', tf.reduce_min(var))
             tf.summary.histogram(name, var)

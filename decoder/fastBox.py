@@ -222,7 +222,7 @@ def _build_inner_layer(hyp, encoded_features, train):
 
     model_2D_path = os.path.join(hyp['dirs']['data_dir'], 'model_2D.pkl')
     with open(model_2D_path, 'rb') as file:
-        data_dict = pickle.load(file)#, encoding='latin1')    
+        data_dict = pickle.load(file, encoding='latin1')
         file.close()
 
     with tf.variable_scope('Overfeat'):

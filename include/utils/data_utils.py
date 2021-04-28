@@ -12,6 +12,7 @@ import include.utils.annolist.AnnotationLib as al
 import pdb
 import scipy as scp
 import scipy.misc
+from PIL import Image, ImageDraw
 
 import random
 
@@ -148,7 +149,7 @@ def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_sc
     if random.random > 0.8:
         return I, a
 
-    I1 = scp.misc.imresize(I, jitter_scale, interp='cubic')
+    I1 = np.array(Image.fromarray(I).resize(size=jitter_scale,resample=Image.CUBIC)) #scp.misc.imresize(I, jitter_scale, interp='cubic')
 
     print("Resized image with scale {}".format(jitter_scale))
 
@@ -218,8 +219,6 @@ def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_sc
 
     return I2, a
 
-
-from PIL import Image, ImageDraw
 
 rect = namedtuple('Rectangel', ['left', 'top', 'right', 'bottom'])
 
