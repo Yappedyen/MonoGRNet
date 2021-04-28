@@ -7,9 +7,9 @@ import tensorflow as tf
 
 from PIL import Image, ImageDraw, ImageFont
 
-from include.utils.data_utils import annotation_jitter, annotation_to_h5
-from include.utils.annolist import AnnotationLib as al
-from include.utils.rect import Rect
+from .data_utils import annotation_jitter, annotation_to_h5
+from .annolist import AnnotationLib as al
+from .rect import Rect
 
 def get_dimensions(corners):
     assert corners.shape == (3, 8)

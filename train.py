@@ -28,10 +28,10 @@ import tensorflow as tf
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-sys.path.insert(1, 'include')
+#sys.path.insert(1, 'include')
 
-import tensorvision.train as train
-import tensorvision.utils as utils
+import include.tensorvision.train as train
+import include.tensorvision.utils as utils
 
 flags.DEFINE_string('name', None,
                     'Append a name Tag to run.')
@@ -52,7 +52,7 @@ def main(_):
     utils.set_gpus_to_use()
 
     try:
-        import tensorvision.train
+        import include.tensorvision.train
     except ImportError:
         logging.error("Could not import the submodules.")
         logging.error("Please execute:"
