@@ -25,9 +25,9 @@ from skimage.exposure import rescale_intensity
 
 import tensorflow as tf
 
-from utils.data_utils import (annotation_jitter, annotation_to_h5)
-from utils.annolist import AnnotationLib as AnnoLib
-from utils.rect import Rect
+from include.utils.data_utils import (annotation_jitter, annotation_to_h5)
+from include.utils.annolist import AnnotationLib as AnnoLib
+from include.utils.rect import Rect
 
 import threading
 

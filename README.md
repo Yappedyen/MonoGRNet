@@ -22,9 +22,9 @@ Please cite this paper if you find the repository helpful:
 ```
 
 ### Prerequisites
-- Ubuntu 16.04
-- Python 2.7
-- Tensorflow 1.4.0
+- Ubuntu 20.04
+- Python 3.8
+- Tensorflow 1.4
 
 ### Install
 Clone this repository

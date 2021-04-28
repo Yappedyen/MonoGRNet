@@ -2,7 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow_fcn import fcn8_vgg
+from include.tensorflow_fcn import fcn8_vgg
 
 import tensorflow as tf
 import os

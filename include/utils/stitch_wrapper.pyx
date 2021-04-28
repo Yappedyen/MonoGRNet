@@ -1,6 +1,6 @@
 from libcpp.vector cimport vector
 from libcpp.set cimport set
-from rect import Rect as PyRect
+from .rect import Rect as PyRect
 cdef extern from "stitch_rects.hpp":
     cdef cppclass Rect:
         Rect(int cx, int cy, int width, int height, float confidence, float depth, float x_3d, float y_3d, float z_3d, float height_3d, float width_3d, float length_3d, float alpha)

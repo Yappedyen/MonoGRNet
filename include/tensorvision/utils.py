@@ -528,7 +528,7 @@ def get_color2class(hypes):
                                      hypes['classes'][i]['name']))
                 default_class = i
             else:
-                if isinstance(color, basestring):
+                if isinstance(color, str):
                     if not color.startswith('#'):
                         logging.error("Colors have to start with '#'. "
                                       "It was '%s'." % color)
