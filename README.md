@@ -43,6 +43,11 @@ data
         train.txt
         val.txt
 ```
+or you can follow this
+```bash
+cd MonoGRNet
+sudo ln -s /path_to_kitti/training data/KittiBox/training
+```
 The train-val split `train.txt` and `val.txt` are contained in this repository.
  
 Compile the Cython module and download the pretrained model:
