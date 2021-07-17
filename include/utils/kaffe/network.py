@@ -3,6 +3,7 @@ import tensorflow as tf
 
 DEFAULT_PADDING = 'SAME'
 
+
 def layer(op):
     def layer_decorated(self, *args, **kwargs):
         # Automatically set a name if not provided.
@@ -23,6 +24,7 @@ def layer(op):
         # Return self for chained calls.
         return self
     return layer_decorated
+
 
 class Network(object):
     def __init__(self, inputs, trainable=True):
@@ -50,11 +52,11 @@ class Network(object):
         assert len(args)!=0
         self.inputs = []
         for layer in args:
-            if isinstance(layer, basestring):
+            if isinstance(layer, str):
                 try:
                     layer = self.layers[layer]
                 except KeyError:
-                    print self.layers.keys()
+                    print(self.layers.keys())
                     raise KeyError('Unknown layer name fed: %s'%layer)
             self.inputs.append(layer)
         return self

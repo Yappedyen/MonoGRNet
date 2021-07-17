@@ -1,7 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 import logging
 import sys
@@ -22,11 +18,13 @@ def get_learning_rate(hypes, step):
         if step < num:
             return hypes['solver']['learning_rates'][i]
 
+
 def get_regression_weights(step, init):
     depth_weight = init
     location_weight = init
     corner_weight = init 
     return np.array([depth_weight, location_weight, corner_weight], dtype=np.float32)
+
 
 def training(hypes, loss, global_step, learning_rate):
     """Sets up the training Ops.
@@ -68,8 +66,6 @@ def training(hypes, loss, global_step, learning_rate):
 
         else:
             raise ValueError('Unrecognized opt type')
-
-
 
         joint_2d_3d = False
         joint_3d = False

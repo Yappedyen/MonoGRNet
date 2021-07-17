@@ -1,20 +1,9 @@
-from __future__ import division
-from __future__ import print_function
-
-
-import os
-import re
-import sys
-import argparse
 import numpy as np
 import copy
 import include.utils.annolist.AnnotationLib as al
-import pdb
 import scipy as scp
 import scipy.misc
-
 import random
-
 from collections import namedtuple
 
 
@@ -24,12 +13,14 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
     # assert H['region_size'] == H['image_height'] / H['grid_height']
     # assert H['region_size'] == H['image_width'] / H['grid_width']
     cell_regions = get_cell_grid(cell_width, cell_height, region_size)
-
+    # 468
     cells_per_image = len(cell_regions)
 
     box_list = [[] for idx in range(cells_per_image)]
     # each row in box_list contains the intersection of all ground truth boxes with a single 32*32 cell
-    for cidx, c in enumerate(cell_regions):
+    for cidx, c in enumerate(cell_regions):  # 枚举
+        # intersection() 计算r和c重叠大小(x,y)
+        # 只要有重叠，r就存入box_list,就是这个网格索引是bbox
         box_list[cidx] = [r for r in a.rects if all(r.intersection(c))]
   
     boxes = np.zeros((1, cells_per_image, 11, max_len, 1), dtype=np.float)
@@ -40,22 +31,25 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
   
     for cidx in range(cells_per_image):
         # assert(cur_num_boxes <= max_len)
-
+        # 网格中心坐标
         cell_ox = 0.5 * (cell_regions[cidx].x1 + cell_regions[cidx].x2)
         cell_oy = 0.5 * (cell_regions[cidx].y1 + cell_regions[cidx].y2)
-
+        # 那这的max_len估计是这个网格关注的bbox的最大个数
         unsorted_boxes = []
         for bidx in range(min(len(box_list[cidx]), max_len)):
 
             # relative box position with respect to cell
+            # bbox 中心相对于cell中心的坐标
             ox = 0.5 * \
                 (box_list[cidx][bidx].x1 + box_list[cidx][bidx].x2) - cell_ox
             oy = 0.5 * \
                 (box_list[cidx][bidx].y1 + box_list[cidx][bidx].y2) - cell_oy
-           
+
+           # bbox的宽和高
             width = abs(box_list[cidx][bidx].x2 - box_list[cidx][bidx].x1)
             height = abs(box_list[cidx][bidx].y2 - box_list[cidx][bidx].y1)
             # each cell only focuses on neighbourhood regions
+            # bbox中心和cell中心的距离小于focus_size*region_size ...
             if (abs(ox) < H['focus_size'] * region_size and abs(oy) < H['focus_size'] * region_size and
                     width < H['biggest_box_px'] and height < H['biggest_box_px']):
                 unsorted_boxes.append(
@@ -71,19 +65,19 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
                     box_list[cidx][bidx].calib,
                     box_list[cidx][bidx].calib_pinv, 
                     box_list[cidx][bidx].xy_scale])
-
+        # 正则表达式  x[0][0]表示unsorted_boxes[0][0]--ox  x[0][1]--oy  按照ox*2+oy*2排序
         for bidx, box in enumerate(sorted(unsorted_boxes, key=lambda x: x[0][0]**2 + x[0][1]**2)):
-            boxes[0, cidx, :, bidx, 0] = box[0]
+            boxes[0, cidx, :, bidx, 0] = box[0]   # box[0] --array([ox,oy,...])11个数据依次放入np数组boxes[0,cidx,:,bidx,0]
             box_flags[0, cidx, 0, bidx, 0] = max(
                 box_list[cidx][bidx].silhouetteID, 1)
             calib[0, cidx, :, :, bidx, 0] = box[1]
             calib_pinv[0, cidx, :, :, bidx, 0] = box[2]
             xy_scale[0, cidx, :, bidx, 0] = box[3]
-            
 
     return boxes, box_flags, calib, calib_pinv, xy_scale
 
 
+# 生成cell_height*cell_width个cell cid=468
 def get_cell_grid(cell_width, cell_height, region_size):
 
     cell_regions = []
@@ -145,7 +139,7 @@ def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_sc
             for p in r.point:
                 p.x = I.shape[1] - p.x
 
-    if random.random > 0.8:
+    if random.random() > 0.8:
         return I, a
 
     I1 = scp.misc.imresize(I, jitter_scale, interp='cubic')
@@ -157,8 +151,6 @@ def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_sc
 
     rescaled_width = I1.shape[1]
     rescaled_height = I1.shape[0]
-
-
 
     px = round(0.5*(target_width)) - \
         round(0.5*(rescaled_width)) + jitter_offset_x
@@ -204,8 +196,7 @@ def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_sc
             p.y = round(jitter_scale*p.y - y1)
 
         # MA: make sure all points are inside the image
-        r.point = [p for p in r.point if p.x >= 0 and p.y >=
-                   0 and p.x < I2.shape[1] and p.y < I2.shape[0]]
+        r.point = [p for p in r.point if p.x >= 0 and p.y >= 0 and p.x < I2.shape[1] and p.y < I2.shape[0]]
 
     new_rects = []
     for r in a.rects:
@@ -280,3 +271,7 @@ def draw_encoded(image, confs, mask=None, rects=None, cell_size=32):
     im.paste(poly, mask=poly)
 
     return np.array(im)
+
+
+if __name__ == "__main__":
+    cell_regions = get_cell_grid(39, 12, 32)

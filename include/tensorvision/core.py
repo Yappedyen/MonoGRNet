@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 
 """Core functions of TV."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import logging
 
@@ -12,13 +9,13 @@ import os
 import numpy as np
 import tensorflow as tf
 
-import tensorvision.utils as utils
+import utils as utils
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-tf.app.flags.DEFINE_boolean(
-    'summary', True, ('Whether or not to save summaries to tensorboard.'))
+flags.DEFINE_boolean(
+    'summary', True, 'Whether or not to save summaries to tensorboard.')
 
 
 def load_weights(checkpoint_dir, sess, saver):

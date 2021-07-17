@@ -1,5 +1,6 @@
 from network import Network
 
+
 class VGG(Network):
     def setup(self):
         (self.feed('data')

@@ -6,9 +6,6 @@
 #include <numeric>
 #include <strings.h>
 #include <assert.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <string>
 
 #include <dirent.h>
 
@@ -34,8 +31,7 @@ STATIC EVALUATION PARAMETERS
 =======================================================================*/
 
 // holds the number of test images on the server
-const int32_t N_MAXIMAGES = 7518;
-const int32_t N_TESTIMAGES = 481;
+const int32_t N_TESTIMAGES = 7518;
 //const int32_t N_TESTIMAGES = 7480;
 
 // easy, moderate and hard evaluation level
@@ -57,7 +53,7 @@ const int NUM_CLASS = 3;
 vector<string> CLASS_NAMES;
 vector<string> CLASS_NAMES_CAP;
 // the minimum overlap required for 2D evaluation on the image/ground plane and 3D evaluation
-const double MIN_OVERLAP[3][3] = {{0.5, 0.5, 0.5}, {0.5, 0.5, 0.5}, {0.5, 0.5, 0.5}};
+const double MIN_OVERLAP[3][3] = {{0.7, 0.5, 0.5}, {0.7, 0.5, 0.5}, {0.7, 0.5, 0.5}};
 
 // no. of recall steps that should be evaluated (discretized)
 const double N_SAMPLE_PTS = 41;
@@ -719,17 +715,6 @@ void saveAndPlotPlots(string dir_name,string file_name,string obj_type,vector<do
   printf("save %s\n", (dir_name + "/" + file_name + ".txt").c_str());
   for (int32_t i=0; i<(int)N_SAMPLE_PTS; i++)
     fprintf(fp,"%f %f %f %f\n",(double)i/(N_SAMPLE_PTS-1.0),vals[0][i],vals[1][i],vals[2][i]);
-
-  double ap[3] = {0.0};
-  for (int32_t i = 0; i < int(N_SAMPLE_PTS); i+=4) {
-    ap[0] += vals[0][i];
-    ap[1] += vals[1][i];
-    ap[2] += vals[2][i];
-  }
-  ap[0] /= 11.0;
-  ap[1] /= 11.0;
-  ap[2] /= 11.0;
-  printf("%f %f %f\n", ap[0], ap[1], ap[2]);
   fclose(fp);
 
   // create png + eps
@@ -772,35 +757,30 @@ void saveAndPlotPlots(string dir_name,string file_name,string obj_type,vector<do
 
     // run gnuplot => create png + eps
     sprintf(command,"cd %s; gnuplot %s",dir_name.c_str(),(file_name + ".gp").c_str());
-    system(command);
+    if(system(command) != -1);
   }
 
   // create pdf and crop
   sprintf(command,"cd %s; ps2pdf %s.eps %s_large.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  system(command);
+  if(system(command) != -1);
   sprintf(command,"cd %s; pdfcrop %s_large.pdf %s.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  system(command);
+  if(system(command) != -1);
   sprintf(command,"cd %s; rm %s_large.pdf",dir_name.c_str(),file_name.c_str());
-  system(command);
+  if(system(command) != -1);
 }
 
-inline bool exists_test0 (const std::string& name) {
-    return ( access( name.c_str(), F_OK ) != -1 );
-}
+bool eval(string result_sha,Mail* mail){
 
-bool eval(string path, string path_to_gt){
-
-  Mail *mail = new Mail();
   // set some global parameters
   initGlobals();
 
   // ground truth and result directories
-  string gt_dir         = path_to_gt;
-  string result_dir     = path;
+  string gt_dir         = "data/object/label_2";
+  string result_dir     = "results/" + result_sha;
   string plot_dir       = result_dir + "/plot";
 
   // create output directories
-  system(("mkdir " + plot_dir).c_str());
+  if(system(("mkdir " + plot_dir).c_str()) != -1);
 
   // hold detections and ground truth in memory
   vector< vector<tGroundtruth> > groundtruth;
@@ -815,19 +795,16 @@ bool eval(string path, string path_to_gt){
 
   // for all images read groundtruth and detections
   mail->msg("Loading detections...");
-  for (int32_t i=0; i<N_MAXIMAGES; i++) {
+  for (int32_t i=0; i<N_TESTIMAGES; i++) {
 
     // file name
     char file_name[256];
     sprintf(file_name,"%06d.txt",i);
 
-    if(!exists_test0(result_dir + "/" + file_name)) {
-      continue;
-    }
     // read ground truth and result poses
     bool gt_success,det_success;
     vector<tGroundtruth> gt   = loadGroundtruth(gt_dir + "/" + file_name,gt_success);
-    vector<tDetection>   det  = loadDetections(result_dir + "/" + file_name,
+    vector<tDetection>   det  = loadDetections(result_dir + "/data/" + file_name,
             compute_aos, eval_image, eval_ground, eval_3d, det_success);
     groundtruth.push_back(gt);
     detections.push_back(det);
@@ -921,8 +898,34 @@ bool eval(string path, string path_to_gt){
 }
 
 int32_t main (int32_t argc,char *argv[]) {
-  string path_to_prediction = argv[1];
-  string path_to_gt = argv[2];
-  eval(path_to_prediction, path_to_gt);
+
+  // we need 2 or 4 arguments!
+  if (argc!=2 && argc!=4) {
+    cout << "Usage: ./eval_detection result_sha [user_sha email]" << endl;
+    return 1;
+  }
+
+  // read arguments
+  string result_sha = argv[1];
+
+  // init notification mail
+  Mail *mail;
+  if (argc==4) mail = new Mail(argv[3]);
+  else         mail = new Mail();
+  mail->msg("Thank you for participating in our evaluation!");
+
+  // run evaluation
+  if (eval(result_sha,mail)) {
+    mail->msg("Your evaluation results are available at:");
+    mail->msg("http://www.cvlibs.net/datasets/kitti/user_submit_check_login.php?benchmark=object&user=%s&result=%s",argv[2], result_sha.c_str());
+  } else {
+    if(system(("rm -r results/" + result_sha).c_str())!= -1);
+    mail->msg("An error occured while processing your results.");
+    mail->msg("Please make sure that the data in your zip archive has the right format!");
+  }
+
+  // send mail and exit
+  delete mail;
+
   return 0;
 }

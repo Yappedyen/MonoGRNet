@@ -1,7 +1,4 @@
 """Utility functions for TensorVision."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import imp
 import json
@@ -11,6 +8,7 @@ import pdb
 
 from datetime import datetime
 import matplotlib.cm as cm
+
 
 # https://github.com/tensorflow/tensorflow/issues/2034#issuecomment-220820070
 import numpy as np
@@ -265,6 +263,8 @@ def create_filewrite_handler(logging_file, mode='w'):
     logging_file : string
         File to log output
 
+    mode:
+        write
     Returns
     -------
     The filewriter handler
@@ -272,11 +272,15 @@ def create_filewrite_handler(logging_file, mode='w'):
     target_dir = os.path.dirname(logging_file)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
+    # 创建FileHandler对象
     filewriter = logging.FileHandler(logging_file, mode=mode)
     formatter = logging.Formatter(
         '%(asctime)s %(name)-3s %(levelname)-3s %(message)s')
+    # FileHandler对象自定义日志级别
     filewriter.setLevel(logging.INFO)
+    # FileHandler对象自定义日志格式
     filewriter.setFormatter(formatter)
+    # 加载FileHandler对象/确定程序的log要写入
     logging.getLogger('').addHandler(filewriter)
     return filewriter
 

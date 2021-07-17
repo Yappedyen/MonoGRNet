@@ -2,14 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """ Continues training from logdir."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
-import imp
-import json
 import logging
-import numpy as np
+
 import os.path
 import sys
 
@@ -24,17 +19,9 @@ else:
                         stream=sys.stdout)
 
 
-import time
-
-from shutil import copyfile
-
-from six.moves import xrange  # pylint: disable=redefined-builtin
-
 import tensorflow as tf
-
-import tensorvision.utils as utils
-import tensorvision.core as core
-import tensorvision.train as train
+import include.tensorvision.utils as utils
+import include.tensorvision.train as train
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS

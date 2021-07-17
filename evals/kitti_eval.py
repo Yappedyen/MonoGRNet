@@ -2,10 +2,6 @@
 # -*- coding: utf-8 -*-
 
 """Trains, evaluates and saves the MediSeg model."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import subprocess
 
@@ -28,6 +24,7 @@ import logging
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 
 def make_val_dir(hypes, validation=True):
     if validation:

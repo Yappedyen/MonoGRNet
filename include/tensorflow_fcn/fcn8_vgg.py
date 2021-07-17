@@ -1,17 +1,14 @@
-
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import logging
 from math import ceil
-import sys
 import pickle
 import numpy as np
 import tensorflow as tf
-
+import sys
+# defaultencoding = 'utf-8'
+# if sys.getdefaultencoding() != defaultencoding:
+#     reload(sys)
+#     sys.setdefaultencoding(defaultencoding)
 
 #import sys
 #reload(sys)
@@ -34,8 +31,9 @@ class FCN8VGG:
         if not os.path.isfile(vgg16_npy_path):
             logging.error(("File {} not found".format(vgg16_npy_path)))
             sys.exit(1)
+        # read binary file
         with open(vgg16_npy_path, 'rb') as file:
-            self.data_dict = pickle.load(file)#, encoding='latin1')
+            self.data_dict = pickle.load(file, encoding='latin1')  # encoding='latin1'
         self.wd = 1e-5
         print("pkl file loaded")
 
@@ -59,7 +57,8 @@ class FCN8VGG:
         """
 
         # Convert RGB to BGR
-        self.train=train
+        self.train = train
+        # 命名空间Processing
         with tf.name_scope('Processing'):
 
             red, green, blue = tf.split(rgb, 3, 3)
@@ -136,7 +135,7 @@ class FCN8VGG:
         return depth_head, location_head, corners_head
 
     def _max_pool(self, bottom, name, debug):
-        pool = tf.nn.max_pool(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
+        pool = tf.nn.max_pool2d(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                               padding='SAME', name=name)
 
         if debug:
@@ -434,6 +433,7 @@ class FCN8VGG:
         A weight decay is added only if one is specified.
 
         Args:
+
           name: name of the variable
           shape: list of ints
           stddev: standard deviation of a truncated Gaussian

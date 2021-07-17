@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 
 """Trains, evaluates and saves the model network using a queue."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import imp
 import json
@@ -15,25 +12,16 @@ import sys
 
 import scipy as scp
 import scipy.misc
-
-# configure logging
-logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
-                        level=logging.INFO,
-                        stream=sys.stdout)
-
-
 import time
-
 from shutil import copyfile
-
 from six.moves import xrange  # pylint: disable=redefined-builtin
-
 import tensorflow as tf
-
 import string
+import include.tensorvision.utils as utils
+import include.tensorvision.core as core
+# configure logging
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO, stream=sys.stdout)
 
-import tensorvision.utils as utils
-import tensorvision.core as core
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -49,7 +37,7 @@ def _copy_parameters_to_traindir(hypes, input_file, target_name, target_dir):
         name of source file
     target_name : str
         target name
-    traindir : str
+    train_dir : str
         directory where training data is saved
     """
     target_file = os.path.join(target_dir, target_name)
@@ -69,6 +57,12 @@ def initialize_training_folder(hypes, files_dir="model_files", logging=True):
     ----------
     hypes : dict
         Hyperparameters
+
+    files_dir:
+        "model_files"
+
+    logging:
+        True
     """
     target_dir = os.path.join(hypes['dirs']['output_dir'], files_dir)
     if not os.path.exists(target_dir):
@@ -87,10 +81,12 @@ def initialize_training_folder(hypes, files_dir="model_files", logging=True):
         utils.create_filewrite_handler(logging_file)
 
     # TODO: read more about loggers and make file logging neater.
-
+    # 将参数拷贝到hypes.json
     target_file = os.path.join(target_dir, 'hypes.json')
     with open(target_file, 'w') as outfile:
+        # 编码json数据，indent缩进值,按顺序输出
         json.dump(hypes, outfile, indent=2, sort_keys=True)
+    # 将input/arch/object/optimizer/evaluator.py拷贝到model_files文件夹中
     _copy_parameters_to_traindir(
         hypes, hypes['model']['input_file'], "data_input.py", target_dir)
     _copy_parameters_to_traindir(
@@ -244,7 +240,7 @@ def run_training(hypes, modules, tv_graph, tv_sess, start_step=0):
 
             _print_eval_dict(eval_names, smoothed_results, prefix='(smooth)')
              
-            #logging.info('Regression Weights: Depth: %.2f, Location: %.2f, Corner: %.2f'%(regression_weights[0], \
+            # logging.info('Regression Weights: Depth: %.2f, Location: %.2f, Corner: %.2f'%(regression_weights[0], \
             #              regression_weights[1], regression_weights[2]))
             # Reset timer
             start_time = time.time()
@@ -340,6 +336,7 @@ def _print_training_status(hypes, step, loss_value, start_time, lr):
                                  examples_per_sec=examples_per_sec)
                  )
 
+
 def do_training(hypes):
     """
     Train model for a number of steps.
@@ -387,7 +384,6 @@ def do_training(hypes):
             tv_graph['inf_out'] = inf_out
             tv_graph['calib_pl'] = calib
             tv_graph['xy_scale_pl'] = xy_scale
-
 
         all_variables = tf.get_collection_ref(tf.GraphKeys.GLOBAL_VARIABLES)
         sess.run(tf.variables_initializer(all_variables))
@@ -482,7 +478,7 @@ def main(_):
         hypes = json.load(f)
 
     utils.set_gpus_to_use()
-    #utils.load_plugins()
+    # utils.load_plugins()
     utils.set_dirs(hypes, tf.app.flags.FLAGS.hypes)
 
     logging.info("Initialize training folder")

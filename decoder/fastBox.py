@@ -3,10 +3,6 @@
 
 """Create the fastbox decoder. For a detailed description see:
 https://arxiv.org/abs/1612.07695 ."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import numpy as np
 import scipy as scp
@@ -14,9 +10,8 @@ import random
 import pickle
 from include.utils import train_utils
 from include.utils import data_utils
-
-
 import tensorflow as tf
+
 
 def _roi_align(hyp, pred_boxes, early_feat, out_channels, crop_size, branch):
     with tf.name_scope('roi_align'):
@@ -65,6 +60,7 @@ def _roi_align(hyp, pred_boxes, early_feat, out_channels, crop_size, branch):
 
         assert hyp['rnn_len'] == 1
         return tf.reshape(conv, [outer_size, crop_size * crop_size * out_channels])
+
 
 def _roi_align_keep_ratio(hyp, pred_boxes, early_feat, out_channels, crop_size, name, branch):
     with tf.name_scope('roi_align'):
@@ -120,8 +116,8 @@ def _build_corner_regression_layer(hype, pred_boxes, early_feat):
     crop_size = 16
     outer_size = hype['grid_height'] * hype['grid_width'] * hype['batch_size']
     features = _roi_align(hype, pred_boxes, early_feat, out_channels, crop_size, 'corners')
-    corner_weights = tf.get_variable('corner_regression', \
-                                      shape=[crop_size*crop_size*out_channels, 24])
+    corner_weights = tf.get_variable('corner_regression',
+                                     shape=[crop_size*crop_size*out_channels, 24])
     tf.add_to_collection('trainable', corner_weights)
     tf.add_to_collection('corners', corner_weights)
     corner_weights_decay = tf.nn.l2_loss(corner_weights) * 1e-4
@@ -131,6 +127,7 @@ def _build_corner_regression_layer(hype, pred_boxes, early_feat):
     pred_corners = 3.0 * tf.tanh(tf.matmul(features, corner_weights))
    
     return tf.reshape(pred_corners, (outer_size, 24))
+
 
 def compute_corners(hypes, dimensions, alpha):
     outer_size = hypes['grid_height'] * hypes['grid_width'] * hypes['batch_size']
@@ -152,8 +149,10 @@ def compute_corners(hypes, dimensions, alpha):
     corners_rot = tf.reshape(tf.concat([x_rot, y_rot, z_rot], axis=1), (outer_size, 24))
     return corners_rot  
 
+
 def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels,
             w_offsets, h_offsets):
+
     '''
     Rezoom into a feature map at multiple interpolation points
     in a grid.
@@ -222,7 +221,7 @@ def _build_inner_layer(hyp, encoded_features, train):
 
     model_2D_path = os.path.join(hyp['dirs']['data_dir'], 'model_2D.pkl')
     with open(model_2D_path, 'rb') as file:
-        data_dict = pickle.load(file)#, encoding='latin1')    
+        data_dict = pickle.load(file, encoding='latin1')
         file.close()
 
     with tf.variable_scope('Overfeat'):
@@ -265,7 +264,6 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
                                   shape=data_dict['box_out'].shape)
     box_weights_decay = tf.nn.l2_loss(box_weights) * 1e-4
     tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, box_weights_decay)
-    
 
     trained_conf_weights = tf.constant_initializer(value=data_dict['confs_out'])
     conf_weights = tf.get_variable(name='confs_out', initializer=trained_conf_weights,
@@ -314,11 +312,10 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
 
     pred_locations_offset = tf.matmul(location_deep_feat, location_weights)
 
-    #pred_locations_offset = tf.reshape(pred_boxes, (outer_size, 4))[:, :2]
+    # pred_locations_offset = tf.reshape(pred_boxes, (outer_size, 4))[:, :2]
     pred_locations_proj = tf.reshape(pred_locations_offset + xy_offset, (outer_size, 2))
 
-    #pred_locations_proj = tf.reshape(xy_offset, (outer_size, 2))
-
+    # pred_locations_proj = tf.reshape(xy_offset, (outer_size, 2))
 
     calib = tf.reshape(labels[3], (outer_size, 3, 4))
     xy_scale = tf.reshape(labels[5], (outer_size, 2))   
@@ -334,7 +331,6 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
         use_depths = tf.reshape(depths, (outer_size, 1))
     else:
         use_depths = tf.reshape(pred_depths, (outer_size, 1))
-    
 
     pred_depths = tf.reshape(pred_depths, (outer_size, 1))
 
@@ -342,6 +338,7 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
     pred_locations_3d = tf.concat([pred_xy, use_depths], axis=1)
 
     return pred_boxes, pred_logits, pred_confidences, pred_depths, pred_locations_3d
+
 
 def _build_rezoom_layer(hyp, rezoom_input, data_dict, logits, train):
     with tf.name_scope('rezoom_layer'):
@@ -411,6 +408,7 @@ def _build_rezoom_layer(hyp, rezoom_input, data_dict, logits, train):
         return pred_boxes, pred_logits, pred_confidences, \
             pred_confs_delta, pred_boxes_delta, pred_depths_delta, pred_locations_delta, confidence_weights
 
+
 def _bbox_from_corners(hyp, global_corners, calib, xy_scale):
     grid_size = hyp['grid_width'] * hyp['grid_height']
     outer_size = grid_size * hyp['batch_size']
@@ -446,6 +444,7 @@ def _bbox_from_corners(hyp, global_corners, calib, xy_scale):
     pred_bbox_proj = tf.concat([(left + right) * 0.5 - x_offsets, (top + bottom) * 0.5 - y_offsets,
                                  right - left, bottom - top], axis=1)
     return pred_bbox_proj
+
 
 def _build_td_confidence_layer(hyp, dlogits, early_feat, hidden_output, confidence_weights, labels, train):
     grid_size = hyp['grid_width'] * hyp['grid_height']
@@ -488,6 +487,7 @@ def _build_td_confidence_layer(hyp, dlogits, early_feat, hidden_output, confiden
                                      hyp['num_classes']])
     return pred_td_confidences, pred_bbox_proj
 
+
 def _build_refine_layer(hyp, logits, pred_bbox_proj):
     grid_size = hyp['grid_width'] * hyp['grid_height']
     outer_size = grid_size * hyp['batch_size']
@@ -527,6 +527,7 @@ def _build_refine_layer(hyp, logits, pred_bbox_proj):
         tf.add_to_collection('refine_decay', var_decay)
     return delta_global_corners
 
+
 def decoder(hyp, logits, labels, train):
     """Apply decoder to the logits.
 
@@ -547,7 +548,6 @@ def decoder(hyp, logits, labels, train):
     hyp['solver']['batch_size'] = batch_size
     if not train:
         hyp['batch_size'] = 1
-
 
     grid_size = hyp['grid_width']*hyp['grid_height']
     outer_size = grid_size*hyp['batch_size']
@@ -600,7 +600,6 @@ def decoder(hyp, logits, labels, train):
         with tf.name_scope('corner_regression_layer'):
             dlogits['pred_corners'] = _build_corner_regression_layer(hyp, current_pred_boxes, logits['corner_early_feat'])
 
-    
         dlogits['pred_td_confidence'], dlogits['pred_bbox_proj'] = _build_td_confidence_layer(hyp, dlogits, early_feat, hidden_output, confidence_weights, labels, train)
 
         dlogits['delta_global_corners'] = _build_refine_layer(hyp, logits, dlogits['pred_bbox_proj'])
@@ -626,6 +625,7 @@ def _add_rezoom_loss_histograms(hypes, pred_boxes_deltas):
     Add some histograms to tensorboard.
     """
     return
+
 
 def _compute_rezoom_loss(hypes, rezoom_loss_input, slow=False):
     """
@@ -662,8 +662,6 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input, slow=False):
 
     delta_confs_loss = tf.reduce_sum(cross_entropy*mask_r) \
         / outer_size * hypes['solver']['head_weights'][0] * 0.1
-
-    
 
     delta_unshaped = perm_truth - (pred_boxes + pred_boxes_deltas)
 
@@ -712,7 +710,6 @@ def loss(hypes, decoded_logits, labels, slow=False):
     pred_boxes = decoded_logits['pred_boxes']
     pred_logits = decoded_logits['pred_logits']
     pred_confidences = decoded_logits['pred_confidences']
-    
 
     pred_confs_deltas = decoded_logits['pred_confs_deltas']
     pred_boxes_deltas = decoded_logits['pred_boxes_deltas']
@@ -731,7 +728,6 @@ def loss(hypes, decoded_logits, labels, slow=False):
     outer_size = grid_size * hypes['batch_size']
 
     true_global_corners = tf.reshape(tf.reshape(location, (outer_size, 3, 1)) + tf.reshape(true_corners, (outer_size, 3, 8)), (outer_size, 24))
-
 
     head = hypes['solver']['head_weights']
 
@@ -779,7 +775,6 @@ def loss(hypes, decoded_logits, labels, slow=False):
     boxes_mask = tf.reshape(boxes_mask, (outer_size, 1))
     corners_loss = tf.reduce_sum(tf.abs(true_corners - pred_corners) * boxes_mask) / outer_size * 0.5
 
-
     refine_loss = tf.reduce_sum(tf.abs(refined_global_corners - true_global_corners) * boxes_mask) / outer_size * 0.5
 
     boxes_mask = tf.reshape(boxes_mask, (outer_size, 1, 1))     
@@ -806,7 +801,6 @@ def loss(hypes, decoded_logits, labels, slow=False):
             hypes, rezoom_loss_input)
 
         _add_rezoom_loss_histograms(hypes, pred_boxes_deltas)
-
 
         if joint_2d_3d:
             loss = 10 * depths_loss + 10 * delta_depths_loss + 10 * locations_loss + 10 * delta_locations_loss + 10 * corners_loss + \
@@ -836,7 +830,6 @@ def loss(hypes, decoded_logits, labels, slow=False):
             loss = refine_loss + locations_loss + delta_locations_loss
             weights_loss = 0.1 * tf.add_n(tf.get_collection('refine_decay')) + 0.1 * tf.add_n(tf.get_collection('location_decay'))
 
-  
     tf.add_to_collection('total_losses', tf.reduce_sum(loss))  
 
     total_loss = tf.reduce_sum(weights_loss + loss) 
@@ -857,6 +850,8 @@ def loss(hypes, decoded_logits, labels, slow=False):
         losses['delta_depths_loss'] = delta_depths_loss
         losses['delta_locations_loss'] = delta_locations_loss
     return losses
+
+
 def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
     """
     Compute summary metrics for tensorboard
@@ -926,10 +921,10 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
     eval_list.append(('Confidence', losses['confidences_loss']))
     eval_list.append(('Delta', losses['delta_confs_loss']))
     eval_list.append(('Depth', losses['depths_loss']))
-    #eval_list.append(('Delta', losses['delta_depths_loss']))
+    # eval_list.append(('Delta', losses['delta_depths_loss']))
     eval_list.append(('Error', depths_error))
     eval_list.append(('Location', losses['locations_loss']))
-    #eval_list.append(('Delta', losses['delta_locations_loss']))
+    # eval_list.append(('Delta', losses['delta_locations_loss']))
     eval_list.append(('Error', locations_error))
     eval_list.append(('Corner', losses['corners_loss']))
     eval_list.append(('Error', global_corners_error))

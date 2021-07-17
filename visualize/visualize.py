@@ -1,6 +1,5 @@
-from visualize.reader import Reader
+from reader import Reader
 from PIL import Image
-from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib as mpl

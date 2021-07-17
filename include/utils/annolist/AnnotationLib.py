@@ -1,23 +1,17 @@
 import os
-
 from math import sqrt
-
 import gzip
 import bz2
-import sys
-import numpy as np;
-
+import numpy as np
 from collections import MutableSequence
-
-#import AnnoList_pb2
-import  utils.annolist.PalLib;
-
+from include.utils.annolist import AnnoList_pb2
+from include.utils.annolist import PalLib
 import xml.dom.minidom
-from xml.dom.minidom import Node
-xml_dom_ext_available=False
+
+xml_dom_ext_available = False
 try:
         import xml.dom.ext
-        xml_dom_ext_available=True
+        xml_dom_ext_available = True
 except ImportError:
         pass
 
@@ -29,19 +23,34 @@ except ImportError:
 ################################################
 
 
-def cmpAnnRectsByScore(r1, r2):
+def cmp(x, y):
+
+        """
+        Replacement for built-in function cmp that was removed in Python 3
+
+        Compare the two objects x and y and return an integer according to
+        the outcome. The return value is negative if x < y, zero if x == y
+        and strictly positive if x > y.
+        """
+
+        return (x > y) - (x < y)
+
+
+def cmpAnnoRectsByScore(r1, r2):
         return cmp(r1.score, r2.score)
+
 
 def cmpAnnoRectsByScoreDescending(r1, r2):
         return (-1)*cmp(r1.score, r2.score)
+
 
 def cmpDetAnnoRectsByScore(r1, r2):
         return cmp(r1.rect.score, r2.rect.score);
 
 
 def suffixMatch(fn1, fn2):
-        l1 = len(fn1);
-        l2 = len(fn2);
+        l1 = len(fn1)
+        l2 = len(fn2)
 
         if fn1[-l2:] == fn2:
                 return True
@@ -51,17 +60,18 @@ def suffixMatch(fn1, fn2):
 
         return False
 
+
 class AnnoList(MutableSequence):
         """Define a list format, which I can customize"""
-        TYPE_INT32 = 5;
-        TYPE_FLOAT = 2;
-        TYPE_STRING = 9;
+        TYPE_INT32 = 5
+        TYPE_FLOAT = 2
+        TYPE_STRING = 9
 
         def __init__(self, data=None):
                 super(AnnoList, self).__init__()
 
-                self.attribute_desc = {};
-                self.attribute_val_to_str = {};
+                self.attribute_desc = {}
+                self.attribute_val_to_str = {}
 
                 if not (data is None):
                         self._list = list(data)
@@ -69,25 +79,25 @@ class AnnoList(MutableSequence):
                         self._list = list()
 
         def add_attribute(self, name, dtype):
-                _adesc = AnnoList_pb2.AttributeDesc();
-                _adesc.name = name;
+                _adesc = AnnoList_pb2.AttributeDesc()
+                _adesc.name = name
                 if self.attribute_desc:
                         _adesc.id = max((self.attribute_desc[d].id for d in self.attribute_desc)) + 1;
                 else:
-                        _adesc.id = 0;
+                        _adesc.id = 0
 
                 if dtype == int:
-                        _adesc.dtype = AnnoList.TYPE_INT32;
+                        _adesc.dtype = AnnoList.TYPE_INT32
                 elif dtype == float or dtype == np.float32:
-                        _adesc.dtype = AnnoList.TYPE_FLOAT;
+                        _adesc.dtype = AnnoList.TYPE_FLOAT
                 elif dtype == str:
-                        _adesc.dtype = AnnoList.TYPE_STRING;
+                        _adesc.dtype = AnnoList.TYPE_STRING
                 else:
                         print ("unknown attribute type: ", dtype)
                         assert(False);
 
-                #print "adding attribute: {}, id: {}, type: {}".format(_adesc.name, _adesc.id, _adesc.dtype);
-                self.attribute_desc[name] = _adesc;
+                # print "adding attribute: {}, id: {}, type: {}".format(_adesc.name, _adesc.id, _adesc.dtype);
+                self.attribute_desc[name] = _adesc
 
         def add_attribute_val(self, aname, vname, val):
                 # add attribute before adding string corresponding to integer value
@@ -96,34 +106,33 @@ class AnnoList(MutableSequence):
                 # check and add if new
                 if all((val_desc.id != val for val_desc in self.attribute_desc[aname].val_to_str)):
                         val_desc = self.attribute_desc[aname].val_to_str.add()
-                        val_desc.id = val;
-                        val_desc.s = vname;
+                        val_desc.id = val
+                        val_desc.s = vname
 
                 # also add to map for quick access
                 if not aname in self.attribute_val_to_str:
-                        self.attribute_val_to_str[aname] = {};
+                        self.attribute_val_to_str[aname] = {}
 
-                assert(not val in self.attribute_val_to_str[aname]);
-                self.attribute_val_to_str[aname][val] = vname;
-
+                assert(not val in self.attribute_val_to_str[aname])
+                self.attribute_val_to_str[aname][val] = vname
 
         def attribute_get_value_str(self, aname, val):
                 if aname in self.attribute_val_to_str and val in self.attribute_val_to_str[aname]:
-                        return self.attribute_val_to_str[aname][val];
+                        return self.attribute_val_to_str[aname][val]
                 else:
-                        return str(val);
+                        return str(val)
 
         def save(self, fname):
-                save(fname, self);
+                save(fname, self)
 
-        #MA: list interface
+        # MA: list interface
         def __len__(self):
                 return len(self._list)
 
         def __getitem__(self, ii):
                 if isinstance(ii, slice):
-                        res = AnnoList();
-                        res.attribute_desc = self.attribute_desc;
+                        res = AnnoList()
+                        res.attribute_desc = self.attribute_desc
                         res._list = self._list[ii]
                         return res;
                 else:
@@ -151,34 +160,36 @@ class AnnoList(MutableSequence):
 
 def is_compatible_attr_type(protobuf_type, attr_type):
         if protobuf_type == AnnoList.TYPE_INT32:
-                return (attr_type == int);
+                return attr_type == int
         elif protobuf_type == AnnoList.TYPE_FLOAT:
-                return (attr_type == float or attr_type == np.float32);
+                return attr_type == float or attr_type == np.float32
         elif protobuf_type == AnnoList.TYPE_STRING:
-                return (attr_type == str);
+                return attr_type == str
         else:
-                assert(false);
+                assert False
 
 
 def protobuf_type_to_python(protobuf_type):
         if protobuf_type == AnnoList.TYPE_INT32:
-                return int;
+                return int
         elif protobuf_type == AnnoList.TYPE_FLOAT:
-                return float;
+                return float
         elif protobuf_type == AnnoList.TYPE_STRING:
-                return str;
+                return str
         else:
-                assert(false);
+                assert False
 
 
 class AnnoPoint(object):
         def __init__(self, x=None, y=None, id=None):
-                self.x = x;
-                self.y = y;
-                self.id = id;
+                self.x = x
+                self.y = y
+                self.id = id
+
 
 class AnnoRect(object):
-        def __init__(self, x1=-1, y1=-1, x2=-1, y2=-1, height=-1, width=-1, length=-1, x=-1, y=-1, z=-1, alpha=-1, calib=None, calib_pinv=None):
+        def __init__(self, x1=-1, y1=-1, x2=-1, y2=-1, height=-1, width=-1, length=-1, x=-1, y=-1, z=-1, alpha=-1,
+                     calib=None, calib_pinv=None):
 
                 self.x1 = x1
                 self.y1 = y1
@@ -206,8 +217,8 @@ class AnnoRect(object):
                 self.silhouetteID = -1
                 self.classID = -1
                 self.track_id = -1
-                self.point = [];
-                self.at = {};
+                self.point = []
+                self.at = {}
 
         def bottom2center(self):
             self.y_3d -= self.height_3d*0.5
@@ -249,7 +260,7 @@ class AnnoRect(object):
         def bottom(self):
                 return max(self.y1, self.y2)
 
-        def forceAspectRatio(self, ratio, KeepHeight = False, KeepWidth = False):
+        def forceAspectRatio(self, ratio, KeepHeight=False, KeepWidth=False):
                 """force the Aspect ratio"""
                 if KeepWidth or ((not KeepHeight) and self.width() * 1.0 / self.height() > ratio):
                         # extend height
@@ -263,21 +274,21 @@ class AnnoRect(object):
                         self.x2 = (self.x1 + newWidth)
 
         def clipToImage(self, min_x, max_x, min_y, max_y):
-                        self.x1 = max(min_x, self.x1)
-                        self.x2 = max(min_x, self.x2)
-                        self.y1 = max(min_y, self.y1)
-                        self.y2 = max(min_y, self.y2)
-                        self.x1 = min(max_x, self.x1)
-                        self.x2 = min(max_x, self.x2)
-                        self.y1 = min(max_y, self.y1)
-                        self.y2 = min(max_y, self.y2)
+                self.x1 = max(min_x, self.x1)
+                self.x2 = max(min_x, self.x2)
+                self.y1 = max(min_y, self.y1)
+                self.y2 = max(min_y, self.y2)
+                self.x1 = min(max_x, self.x1)
+                self.x2 = min(max_x, self.x2)
+                self.y1 = min(max_y, self.y1)
+                self.y2 = min(max_y, self.y2)
 
         def printContent(self):
-                print ("Coords: ", self.x1, self.y1, self.x2, self.y2)
-                print ("Score: ", self.score)
-                print ("Articulations: ", self.articulations)
-                print ("Viewpoints: ", self.viewpoints)
-                print ("Silhouette: ", self.silhouetteID)
+                print("Coords: ", self.x1, self.y1, self.x2, self.y2)
+                print("Score: ", self.score)
+                print("Articulations: ", self.articulations)
+                print("Viewpoints: ", self.viewpoints)
+                print("Silhouette: ", self.silhouetteID)
 
         def ascii(self):
                 r = "("+str(self.x1)+", "+str(self.y1)+", "+str(self.x2)+", "+str(self.y2)+")"
@@ -318,7 +329,7 @@ class AnnoRect(object):
                 self.x2 = (centerX + (w/2.0)*factor)
                 self.y2 = (centerY + (h/2.0)*factor_y)
 
-
+        # 计算重叠的大小
         def intersection(self, other):
                 self.sortCoords()
                 other.sortCoords()
@@ -332,18 +343,18 @@ class AnnoRect(object):
                 if(self.y2 <= other.y1):
                         return (0, 0)
 
-                l = max(self.x1, other.x1);
-                t = max(self.y1, other.y1);
-                r = min(self.x2, other.x2);
-                b = min(self.y2, other.y2);
+                l = max(self.x1, other.x1)
+                t = max(self.y1, other.y1)
+                r = min(self.x2, other.x2)
+                b = min(self.y2, other.y2)
                 return (r - l, b - t)
 
-                #Alternate implementation
-                #nWidth  = self.x2 - self.x1
-                #nHeight = self.y2 - self.y1
-                #iWidth  = max(0,min(max(0,other.x2-self.x1),nWidth )-max(0,other.x1-self.x1))
-                #iHeight = max(0,min(max(0,other.y2-self.y1),nHeight)-max(0,other.y1-self.y1))
-                #return (iWidth, iHeight)
+                # Alternate implementation
+                # nWidth  = self.x2 - self.x1
+                # nHeight = self.y2 - self.y1
+                # iWidth  = max(0,min(max(0,other.x2-self.x1),nWidth )-max(0,other.x1-self.x1))
+                # iHeight = max(0,min(max(0,other.y2-self.y1),nHeight)-max(0,other.y1-self.y1))
+                # return (iWidth, iHeight)
 
         def cover(self, other):
                 nWidth = self.width()
@@ -384,8 +395,8 @@ class AnnoRect(object):
                         dWidth  = float(self.x2 - self.x1)
                         dHeight = float(self.y2 - self.y1)
 
-                xdist   = (self.x1 + self.x2 - other.x1 - other.x2) / dWidth
-                ydist   = (self.y1 + self.y2 - other.y1 - other.y2) / dHeight
+                xdist = (self.x1 + self.x2 - other.x1 - other.x2) / dWidth
+                ydist = (self.y1 + self.y2 - other.y1 - other.y2) / dHeight
 
                 return sqrt(xdist*xdist + ydist*ydist)
 
@@ -394,10 +405,10 @@ class AnnoRect(object):
                 overlap = self.cover(other)
                 dist = self.distance(other, aspectRatio, fixWH)
 
-                #if(self.width() == 24 ):
-                #print cover, " ", overlap, " ", dist
-                #print coverThresh, overlapThresh, distThresh
-                #print (cover>=coverThresh and overlap>=overlapThresh and dist<=distThresh)
+                # if(self.width() == 24 ):
+                # print cover, " ", overlap, " ", dist
+                # print coverThresh, overlapThresh, distThresh
+                # print (cover>=coverThresh and overlap>=overlapThresh and dist<=distThresh)
 
                 if (cover>=coverThresh and overlap>=overlapThresh and dist<=distThresh and self.classID == other.classID):
                         return 1
@@ -405,7 +416,7 @@ class AnnoRect(object):
                         return 0
 
         def isMatching(self, other, style, coverThresh, overlapThresh, distThresh, minOverlap, aspectRatio=-1, fixWH=-1):
-                #choose matching style
+                # choose matching style
                 if (style == 0):
                         return self.isMatchingStd(other, coverThresh, overlapThresh, distThresh, aspectRatio=-1, fixWH=-1)
 
@@ -456,7 +467,7 @@ class AnnoRect(object):
                         rect_el.appendChild(silhouette_el)
 
                 if self.classID != -1:
-                        class_el    = doc.createElement("classID")
+                        class_el = doc.createElement("classID")
                         class_val = doc.createTextNode(str(self.classID))
                         class_el.appendChild(class_val)
                         rect_el.appendChild(class_el)
@@ -465,29 +476,28 @@ class AnnoRect(object):
                         annopoints_el = doc.createElement("annopoints")
 
                         for p in self.point:
-                                point_el = doc.createElement("point");
+                                point_el = doc.createElement("point")
 
-                                point_id_el = doc.createElement("id");
-                                point_id_val = doc.createTextNode(str(p.id));
-                                point_id_el.appendChild(point_id_val);
-                                point_el.appendChild(point_id_el);
+                                point_id_el = doc.createElement("id")
+                                point_id_val = doc.createTextNode(str(p.id))
+                                point_id_el.appendChild(point_id_val)
+                                point_el.appendChild(point_id_el)
 
-                                point_x_el = doc.createElement("x");
-                                point_x_val = doc.createTextNode(str(p.x));
-                                point_x_el.appendChild(point_x_val);
-                                point_el.appendChild(point_x_el);
+                                point_x_el = doc.createElement("x")
+                                point_x_val = doc.createTextNode(str(p.x))
+                                point_x_el.appendChild(point_x_val)
+                                point_el.appendChild(point_x_el)
 
-                                point_y_el = doc.createElement("y");
-                                point_y_val = doc.createTextNode(str(p.y));
-                                point_y_el.appendChild(point_y_val);
-                                point_el.appendChild(point_y_el);
+                                point_y_el = doc.createElement("y")
+                                point_y_val = doc.createTextNode(str(p.y))
+                                point_y_el.appendChild(point_y_val)
+                                point_el.appendChild(point_y_el)
 
-                                annopoints_el.appendChild(point_el);
+                                annopoints_el.appendChild(point_el)
 
-                        rect_el.appendChild(annopoints_el);
+                        rect_el.appendChild(annopoints_el)
 
                 node.appendChild(rect_el)
-
 
 
 class Annotation(object):
@@ -495,15 +505,15 @@ class Annotation(object):
         def __init__(self):
                 self.imageName = ""
                 self.imagePath = ""
-                self.rects =[]
+                self.rects = []
                 self.frameNr = -1
 
         def clone_empty(self):
                 new = Annotation()
                 new.imageName = self.imageName
                 new.imagePath = self.imagePath
-                new.frameNr   = self.frameNr
-                new.rects     = []
+                new.frameNr = self.frameNr
+                new.rects = []
                 return new
 
         def filename(self):
@@ -548,7 +558,6 @@ class Annotation(object):
                         rect.addToXML(annotation_el, doc)
                 node.appendChild(annotation_el)
 
-
         def sortByScore(self, dir="ascending"):
                 if (dir=="descending"):
                         self.rects.sort(cmpAnnoRectsByScoreDescending)
@@ -557,6 +566,7 @@ class Annotation(object):
 
         def __getitem__(self, index):
                 return self.rects[index]
+
 
 class detAnnoRect:
         def __init(self):
@@ -567,18 +577,20 @@ class detAnnoRect:
                 self.boxIndex = -1
 
 #####################################################################
-### Parsing
+# Parsing
+
 
 def parseTii(filename):
 
         # MA: this must be some really old code
-        assert(False);
+        assert False
+
         annotations = []
 
         #--- parse xml ---#
         doc = xml.dom.minidom.parse(filename)
 
-        #--- get tags ---#
+        # --- get tags --- #
         for file in doc.getElementsByTagName("file"):
 
                 anno = Annotation()
@@ -619,6 +631,7 @@ def parseTii(filename):
                 annotations.append(anno)
 
         return annotations
+
 
 def parseXML(filename):
         filename = os.path.realpath(filename)
@@ -816,13 +829,13 @@ def parseIDL(filename):
 
                         ## parse rect segments
                         for rectSeg in rectSegs:
-                                #print "RectSeg: ", rectSeg
+                                # print "RectSeg: ", rectSeg
                                 rect = AnnoRect()
                                 posBracket1 = rectSeg.find('(')
                                 posBracket2 = rectSeg.find(')')
                                 coordinates = rectSeg[posBracket1+1:posBracket2].split(',')
-                                #print coordinates
-                                #print "Coordinates: ",coordinates
+                                # print coordinates
+                                # print "Coordinates: ",coordinates
                                 rect.x1 = float(round(float(coordinates[0].strip())))
                                 rect.y1 = float(round(float(coordinates[1].strip())))
                                 rect.x2 = float(round(float(coordinates[2].strip())))
@@ -843,11 +856,9 @@ def parseIDL(filename):
         return annotations
 
 
-
-
-
 #####################################################################
-### Saving
+# Saving
+
 
 def save(filename, annotations):
         print ("saving: ", filename)
@@ -867,8 +878,9 @@ def save(filename, annotations):
                 return PalLib.savePal(filename, PalLib.al2pal(annotations));
 
         else:
-                assert(False);
-                return False;
+                assert False
+                return False
+
 
 def saveIDL(filename, annotations):
         [name, ext] = os.path.splitext(filename)
@@ -893,6 +905,7 @@ def saveIDL(filename, annotations):
 
         file.close()
 
+
 def idlBase(filename):
         if (filename.rfind(".pal") == len(filename) - 4):
                 return (filename[:-4], ".pal")
@@ -914,6 +927,7 @@ def idlBase(filename):
 
         if (filename.rfind(".al.bz2") == len(filename) - 7):
                 return (filename[:-7], ".al.bz2")
+
 
 def saveXML(filename, annotations):
         document = xml.dom.minidom.Document()
@@ -949,6 +963,7 @@ def saveXML(filename, annotations):
 
 #####################################################################
 ### Statistics
+
 
 def getStats(annotations):
         no = 0
@@ -1028,6 +1043,7 @@ def getStats(annotations):
 ##
 ##  IDL merging
 ##
+
 
 def mergeIDL(detIDL, det2IDL, detectionFuse= True, minOverlap = 0.5):
         mergedIDL = []
@@ -1173,6 +1189,8 @@ def extractSubSet(gtIDL, detIDL):
 #  Function to remove all detections with a too low score
 #
 #
+
+
 def filterMinScore(detections, minScore):
         newDetections = []
         for anno in detections:
@@ -1190,6 +1208,8 @@ def filterMinScore(detections, minScore):
         return newDetections
 
 # foo.idl -> foo-suffix.idl, foo.idl.gz -> foo-suffix.idl.gz etc
+
+
 def suffixIdlFileName(filename, suffix):
         exts = [".idl", ".idl.gz", ".idl.bz2"]
         for ext in exts:
@@ -1197,8 +1217,10 @@ def suffixIdlFileName(filename, suffix):
                         return filename[0:-len(ext)] + "-" + suffix + ext
         raise ValueError("this does not seem to be a valid filename for an idl-file")
 
+
 if __name__ == "__main__":
 # test output
+
         idl = parseIDL("/tmp/asdf.idl")
         idl[0].rects[0].articulations = [4,2]
         idl[0].rects[0].viewpoints = [2,3]

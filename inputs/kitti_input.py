@@ -1,38 +1,22 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 import matplotlib
-matplotlib.use('Agg')
 import itertools
-import json
-import logging
 import os
-import sys
 import random
-from random import shuffle
-import pdb
 from PIL import Image, ImageEnhance
 import numpy as np
-
-import scipy as scp
-import scipy.misc
 import matplotlib.pyplot as plt
-from scipy.misc import imread, imresize
-from skimage.util import random_noise
-from skimage.filters import gaussian
-from skimage.exposure import rescale_intensity
-
-
+import imageio
 import tensorflow as tf
-
-from include.utils.data_utils import (annotation_jitter, annotation_to_h5)
+from include.utils.data_utils import (annotation_to_h5)
 from include.utils.annolist import AnnotationLib as AnnoLib
-from include.utils.rect import Rect
-
 import threading
-
 from collections import namedtuple
+
+# nametuple 继承于tuple
+# 定义一个nametuple类型的fake_anno_object，包含rects属性
 fake_anno = namedtuple('fake_anno_object', ['rects'])
+matplotlib.use('Agg')
+
 
 def _noise(image):
     if np.random.uniform() < 0.5:
@@ -43,6 +27,7 @@ def _noise(image):
                         noise, 0, 255).astype(np.uint8)
     return image_new
 
+
 def _enhance(image):
     if np.random.uniform() < 0.5:
         return image
@@ -52,12 +37,14 @@ def _enhance(image):
     image_obj = ImageEnhance.Contrast(image_obj).enhance(np.random.uniform(0.7, 1.3))
     return np.array(image_obj)
 
+
 def _projection(point, calib):
     point_r = np.reshape(point, (3, ))
     point_exp = np.reshape([point_r[0], point_r[1], point_r[2], 1], (4, 1))
     point_proj = np.dot(calib, point_exp)
     point_proj = point_proj[:2] / point_proj[2]
     return np.reshape(point_proj, (2, ))
+
 
 def _vis(im_obj, anno, index):
     plt.figure(figsize=(12, 4))
@@ -74,6 +61,8 @@ def _vis(im_obj, anno, index):
     plt.close()
     return
 
+
+# 图像做一个起伏
 def _jitter(im_obj, anno, jitter_pixel=24):
     im = np.array(im_obj)
     trans = np.random.normal(scale=jitter_pixel, size=(2, ))
@@ -108,6 +97,7 @@ def _jitter(im_obj, anno, jitter_pixel=24):
     anno.rects = new_rects
     return image_jitter, anno
 
+
 def _flip(im_obj, anno):
     if np.random.uniform() < 0.5:
         return im_obj, anno
@@ -124,6 +114,7 @@ def _flip(im_obj, anno):
         r.alpha = np.pi - r.alpha if r.alpha > 0 else -np.pi - r.alpha 
     return im_obj, anno
 
+
 def read_kitti_anno(label_file, calib_file, detect_truck):
     """ Reads a kitti annotation file.
 
@@ -133,15 +124,27 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
     Returns:
       Lists of rectangels: Cars and don't care area.
     """
+    """
+    [['Car', '0.00', '0', '1.89', '561.93', '186.85', '698.62',  '273.77', 
+    '1.48', '1.51', '4.35', '0.55', '1.80', '14.99', '1.92'], 
+    ['Car', '0.00', '2', '1.65', '805.83', '179.99', '856.66', '218.93', 
+    '1.47', '1.68', '3.88', '9.09', '1.78', '29.59', '1.94']]
+    """
     labels = [line.rstrip().split(' ') for line in open(label_file)]
-
+    # label_file = '/home/l4v/MonoGRNet/data/KittiBox/training/label_2/007474.txt'
     label_file_split = label_file.rstrip().split('/')
     index = label_file_split[-1].split('.')[0]
-    #import pdb 
-    #pdb.set_trace()
+    # import pdb
+    # pdb.set_trace()
     calibs = [line.rstrip().split(' ') for line in open(calib_file)]
     assert calibs[2][0] == 'P2:'
+    """
+    [[7.215377e+02 0.000000e+00 6.095593e+02 4.485728e+01]
+    [0.000000e+00 7.215377e+02 1.728540e+02 2.163791e-01]
+    [0.000000e+00 0.000000e+00 1.000000e+00 2.745884e-03]]
+    """
     calib = np.reshape(calibs[2][1:], (3, 4)).astype(np.float32)
+    # calib_pinv calib伪逆
     calib_pinv = np.linalg.pinv(calib)
     rect_list = []
     for label in labels:
@@ -149,7 +152,7 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
                 label[0] == 'Truck' or label[0] == 'DontCare'):
             continue
         notruck = not detect_truck
-        if notruck and label[0] == 'Truck':
+        if notruck and label[0] == 'Truck':  # truck不显示
             continue
         if label[0] == 'DontCare':
             class_id = -1
@@ -174,6 +177,7 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
     return rect_list
 
 
+# 改变bbox的大小
 def _rescale_boxes(current_shape, anno, target_height, target_width):
     x_scale = target_width / float(current_shape[1])
     y_scale = target_height / float(current_shape[0])
@@ -189,6 +193,7 @@ def _rescale_boxes(current_shape, anno, target_height, target_width):
     return anno
 
 
+# 生成 mask
 def _generate_mask(hypes, ignore_rects):
 
     width = hypes["image_width"]
@@ -217,9 +222,11 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
     """Take the txt file and net configuration and create a generator
     that outputs a jittered version of a random image from the annolist
     that is mean corrected."""
-
+    # /home/l4v/MonoGRNet/data/KittiBox
     base_path = os.path.realpath(os.path.dirname(kitti_txt))
+    # ['training/image_2/00445.png training/label_2/00445.txt',...,'...']
     files = [line.rstrip() for line in open(kitti_txt)]
+
     if hypes['data']['truncate_data']:
         files = files[:10]
         random.seed(0)
@@ -227,27 +234,32 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
         if random_shuffel:
             random.shuffle(files)
         for file in files:
-            image_file, gt_image_file = file.split(" ")
+            image_file, gt_image_file = file.split(" ")  # image_address, label_address
             image_file_split = image_file.split('/')
-            index = image_file_split[-1].split('.')[0]
+            index = image_file_split[-1].split('.')[0]  # 007474 image_index
+            # /home/l4v/MonoGRNet/data/KittiBox/training/calib/007474.txt
             calib_file = os.path.join(base_path, image_file_split[0], 'calib', index + '.txt')
+
+            #  assert false  igger exception
             assert os.path.exists(calib_file), \
                 "File does not exist: %s" % calib_file
-      
+
+            # /home/l4v/MonoGRNet/data/KittiBox/training/image_2/007474.png
             image_file = os.path.join(base_path, image_file)
             assert os.path.exists(image_file), \
                 "File does not exist: %s" % image_file
+            # /home/l4v/MonoGRNet/data/KittiBox/training/label_2/007474.txt
             gt_image_file = os.path.join(base_path, gt_image_file)
             assert os.path.exists(gt_image_file), \
                 "File does not exist: %s" % gt_image_file
-
+            # rect_list = [x1,y1,...]  读取label和calib
             rect_list = read_kitti_anno(gt_image_file, calib_file, 
                                         detect_truck=hypes['detect_truck'])
 
             anno = AnnoLib.Annotation()
             anno.rects = rect_list
 
-            im = scp.misc.imread(image_file)
+            im = imageio.imread(image_file)
             if im.shape[2] == 4:
                 im = im[:, :, :3]
            
@@ -255,40 +267,39 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
                 im, anno = _flip(im, anno)
                 im, anno = _jitter(im, anno)
                 im = _noise(_enhance(im))
-               # _vis(im, anno, index)
-             
-            anno = _rescale_boxes(im.shape, anno,
-                                          hypes["image_height"],
-                                          hypes["image_width"])
-            im = imresize(
-                    im, (hypes["image_height"], hypes["image_width"]),
-                    interp='cubic')
 
-       
+               # _vis(im, anno, index)
+
+            # 变换图像尺寸
+            anno = _rescale_boxes(im.shape, anno, hypes["image_height"], hypes["image_width"])
+            im = Image.fromarray(im).resize(size=(hypes["image_width"], hypes["image_height"]))
+
+            # 只关注classid=1的注释
             pos_list = [rect for rect in anno.rects if rect.classID == 1]
+            # 存入nametuple
             pos_anno = fake_anno(pos_list)
             # boxes: [1, grid_height*grid_width, 11, max_len, 1]
-            # for each cell, this array contains the ground truth boxes around it (within focus area, defined by center distance)
+            # for each cell, this array contains the ground truth boxes around it (within focus area,
+            # defined by center distance)
             # confs: [1, grid_height*grid_width, 1, max_len, 1]
             # record the valid boxes, since max_len is greater than the number of ground truth boxes
-            boxes, confs, calib, calib_pinv,  xy_scale = annotation_to_h5(hypes,
-                                                                            pos_anno,
-                                                                            hypes["grid_width"],
-                                                                            hypes["grid_height"],
-                                                                            hypes["rnn_len"])
+            boxes, confs, calib, calib_pinv, xy_scale = annotation_to_h5(hypes, pos_anno,
+                                                                         hypes["grid_width"],
+                                                                         hypes["grid_height"],
+                                                                         hypes["rnn_len"])
             # masks are zero in "Don't care" area 
             mask_list = [rect for rect in anno.rects if rect.classID == -1]
             mask = _generate_mask(hypes, mask_list)
 
-            boxes = boxes.reshape([hypes["grid_height"],
-                                   hypes["grid_width"], 11])
+            boxes = boxes.reshape([hypes["grid_height"], hypes["grid_width"], 11])
             confs = confs.reshape(hypes["grid_height"], hypes["grid_width"])
-            calib = calib.reshape(hypes["grid_height"], 
-                                  hypes["grid_width"], 3, 4)
-            xy_scale = xy_scale.reshape(hypes["grid_height"], 
-                                            hypes["grid_width"], 2)
-            calib_pinv = calib_pinv.reshape(hypes['grid_height'], 
-                                            hypes['grid_width'], 4, 3)
+            calib = calib.reshape(hypes["grid_height"], hypes["grid_width"], 3, 4)
+            xy_scale = xy_scale.reshape(hypes["grid_height"], hypes["grid_width"], 2)
+            calib_pinv = calib_pinv.reshape(hypes['grid_height'], hypes['grid_width'], 4, 3)
+            # yield 生成器类似于return，但是迭代一次遇到yield时就返回yield后面(右边)的值。
+            # 重点是：下一次迭代时，从上一次迭代遇到的yield后面的代码(下一行)开始执行。
+            # 第一次调用时必须先next()或send(None)，否则会报错。
+            # 通过重复调用next()方法，直到捕获一个异常。或者通过迭代（for）从上次位置开始
             yield {"image": im, "boxes": boxes, "confs": confs, "calib": calib, "calib_pinv": calib_pinv, 
                    "xy_scale": xy_scale, "rects": pos_list, "mask": mask}
 
@@ -304,14 +315,15 @@ def create_queues(hypes, phase):
     hypes["rnn_len"] = 1
     dtypes = [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32]
     grid_size = hypes['grid_width'] * hypes['grid_height']
-    shapes = ([hypes['image_height'], hypes['image_width'], 3],
-              [hypes['grid_height'], hypes['grid_width']],
-              [hypes['grid_height'], hypes['grid_width'], 11],
-              [hypes['grid_height'], hypes['grid_width']], 
-              [hypes['grid_height'], hypes['grid_width'], 3, 4], 
-              [hypes['grid_height'], hypes['grid_width'], 4, 3], 
-              [hypes['grid_height'], hypes['grid_width'], 2])
+    shapes = ([hypes['image_height'], hypes['image_width'], 3],  # image
+              [hypes['grid_height'], hypes['grid_width']],       # confs
+              [hypes['grid_height'], hypes['grid_width'], 11],  # boxes的11 个参数
+              [hypes['grid_height'], hypes['grid_width']],      # mask
+              [hypes['grid_height'], hypes['grid_width'], 3, 4],  # calib
+              [hypes['grid_height'], hypes['grid_width'], 4, 3],  # calib_pinv
+              [hypes['grid_height'], hypes['grid_width'], 2])     # x_scale y_scale 缩放比例
     capacity = 30
+    # 创建一个队列存放数据
     q = tf.FIFOQueue(capacity=capacity, dtypes=dtypes, shapes=shapes)
     return q
 
@@ -326,7 +338,7 @@ def _processe_image(hypes, image):
     if augment_level > 1:
         image = tf.image.random_saturation(image, lower=0.5, upper=1.6)
         image = tf.image.random_hue(image, max_delta=0.15)
-
+    # 返回最小值
     image = tf.minimum(image, 255.0)
     image = tf.maximum(image, 0)
 
@@ -337,6 +349,7 @@ def start_enqueuing_threads(hypes, q, phase, sess):
     """Start enqueuing threads."""
 
     # Creating Placeholder for the Queue
+    # 占位符
     x_in = tf.placeholder(tf.float32)
     confs_in = tf.placeholder(tf.float32)
     boxes_in = tf.placeholder(tf.float32)
@@ -347,6 +360,7 @@ def start_enqueuing_threads(hypes, q, phase, sess):
     xy_scale_in = tf.placeholder(tf.float32)
 
     # Creating Enqueue OP
+    # 入列元素
     enqueue_op = q.enqueue((x_in, confs_in, boxes_in, mask_in, calib_in, calib_pinv_in, xy_scale_in))
 
     def make_feed(data):
@@ -359,22 +373,28 @@ def start_enqueuing_threads(hypes, q, phase, sess):
                 xy_scale_in: data['xy_scale']}
 
     def thread_loop(sess, enqueue_op, gen):
+        # 参数 feed_dict给使用placeholder创建出来的tensor赋值, 也允许调用者替换图中张量的值
+        # 通过迭代来给队列喂数据
         for d in gen:
             sess.run(enqueue_op, feed_dict=make_feed(d))
 
-    data_file = hypes["data"]['%s_file' % phase]
+    data_file = hypes["data"]['%s_file' % phase]  # train_file
     data_dir = hypes['dirs']['data_dir']
-    data_file = os.path.join(data_dir, data_file)
+    data_file = os.path.join(data_dir, data_file)  # ../data/KittiBox/train.txt
 
+    # 返回的是生成器
     gen = _load_kitti_txt(data_file, hypes,
                           jitter={'train': hypes['solver']['use_jitter'],
                                   'val': False}[phase])
-
-    data = gen.next()
+    # 第一次调用gen用next(),yield的数据返回给data
+    data = next(gen)
     sess.run(enqueue_op, feed_dict=make_feed(data))
+    # 多线程
     t = threading.Thread(target=thread_loop,
                          args=(sess, enqueue_op, gen))
+    # daemon守护线程，只有这个线程时，线程结束
     t.daemon = True
+    # 线程启动
     t.start()
 
 
@@ -391,6 +411,7 @@ def inputs(hypes, q, phase):
         xy_scale = tf.expand_dims(xy_scale, 0)
         return image, (confidences, boxes, mask, calib, calib_pinv, xy_scale)
     elif phase == 'train':
+        # dequeue_many(n)将n个元素连接到一起移出队列
         image, confidences, boxes, mask, calib, calib_pinv, xy_scale = q.dequeue_many(hypes['batch_size'])
         image = _processe_image(hypes, image)
         return image, (confidences, boxes, mask, calib, calib_pinv, xy_scale)
