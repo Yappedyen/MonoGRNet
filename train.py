@@ -68,7 +68,7 @@ def main(_):
     train.initialize_training_folder(hypes)
     # train.maybe_download_and_extract(hypes)
     logging.info("Start training")
-    # 开始训练
+    # 开始训练,传入参数
     train.do_training(hypes)
 
 
