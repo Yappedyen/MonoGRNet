@@ -7,12 +7,14 @@ import subprocess
 
 import scipy as scp
 import scipy.misc
+import imageio
+from PIL import Image
 
 import numpy as np
 
 import tensorflow as tf
 
-import include.utils.train_utils
+from include.utils import train_utils
 import time
 
 import random
@@ -71,9 +73,9 @@ def evaluate(hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax):
         subprocess.check_call([eval_cmd, val_path, label_dir])
     except OSError as error:
         logging.warning("Failed to run run kitti evaluation code.")
-        logging.warning("Please run: `cd submodules/KittiObjective2/ && make`")
+        logging.warning("Please run: `cd submodules/KittiEvaluation/ && make`")
         logging.warning("For more information see:"
-                        "`submodules/KittiObjective2/README.md`")
+                        "`submodules/KittiEvaluation/README.md`")
         exit(1)
         img_dir = make_img_dir(hypes)
         logging.info("Output images have been written to {}.".format(img_dir))
@@ -158,16 +160,15 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
         index = image_file_split[-1].split('.')[0]
         calib_file = os.path.join(base_path, image_file_split[0], 'calib', index + '.txt')
 
-        orig_img = scp.misc.imread(image_file)[:, :, :3]
+        orig_img = imageio.imread(image_file)[:, :, :3]
 
         xy_scale = np.reshape([hypes['image_width']*1.0/orig_img.shape[1],
                                hypes['image_height']*1.0/orig_img.shape[0]], (1, 1, 1, 2)).astype(np.float32)
         xy_scale = np.repeat(xy_scale, hypes['grid_height'], axis=1)
         xy_scale = np.repeat(xy_scale, hypes['grid_width'], axis=2)
 
-        img = scp.misc.imresize(orig_img, (hypes["image_height"],
-                                           hypes["image_width"]),
-                                interp='cubic')
+        img = np.array(Image.fromarray(orig_img).resize((hypes["image_width"], hypes["image_height"]), resample=Image.CUBIC))
+
         calibs = [line.rstrip().split(' ') for line in open(calib_file)]
         assert calibs[2][0] == 'P2:'
         calib = np.reshape(calibs[2][1:], (1, 1, 1, 3, 4)).astype(np.float32)
@@ -220,7 +221,7 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
 
         pred_anno = AnnLib.Annotation()
         pred_anno.imageName = image_file
-        new_img, rects = include.utils.train_utils.add_rectangles(
+        new_img, rects = train_utils.add_rectangles(
             hypes, [img], np_pred_confidences,
             np_pred_boxes, np_pred_depths, np_pred_locations, 
             np_pred_corners, show_removed=False,
@@ -230,7 +231,7 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
         if validation and i % 15 == 0:
             image_name = os.path.basename(pred_anno.imageName)
             image_name = os.path.join(img_dir, image_name)
-            scp.misc.imsave(image_name, new_img)
+            imageio.imwrite(image_name, new_img)
 
         if validation:
             image_name = os.path.basename(pred_anno.imageName)
@@ -245,7 +246,7 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
             rect.calib = calib
 
         pred_anno.rects = rects
-        pred_anno = include.utils.train_utils.rescale_boxes((
+        pred_anno = train_utils.rescale_boxes((
             hypes["image_height"],
             hypes["image_width"]),
             pred_anno, orig_img.shape[0],
@@ -263,7 +264,7 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
 
     start_time = time.time()
     for i in range(100):
-        include.utils.train_utils.compute_rectangels(
+        train_utils.compute_rectangels(
             hypes, np_pred_confidences,
             np_pred_boxes, np_pred_depths, np_pred_locations, show_removed=False,
             use_stitching=True, rnn_len=hypes['rnn_len'],
