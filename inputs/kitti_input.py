@@ -11,6 +11,9 @@ from include.utils.data_utils import (annotation_to_h5)
 from include.utils.annolist import AnnotationLib as AnnoLib
 import threading
 from collections import namedtuple
+import logging
+import json
+
 
 # nametuple 继承于tuple
 # 定义一个nametuple类型的fake_anno_object，包含rects属性
@@ -28,14 +31,23 @@ def _noise(image):
     return image_new
 
 
+# 图像增强
 def _enhance(image):
     if np.random.uniform() < 0.5:
         return image
+    # 实现array到image的转换
     image_obj = Image.fromarray(image)
+    # PIL image转换成array
+    # img = np.asarray(image_obj)
+    # 颜色增强
     image_obj = ImageEnhance.Color(image_obj).enhance(np.random.uniform(0.5, 1.5))
+    # 亮度增强
     image_obj = ImageEnhance.Brightness(image_obj).enhance(np.random.uniform(0.7, 1.3))
+    # 对比度增强
     image_obj = ImageEnhance.Contrast(image_obj).enhance(np.random.uniform(0.7, 1.3))
-    return np.array(image_obj)
+    # img = np.array(image_obj)
+    img = np.asarray(image_obj)
+    return img
 
 
 def _projection(point, calib):
@@ -48,6 +60,7 @@ def _projection(point, calib):
 
 def _vis(im_obj, anno, index):
     plt.figure(figsize=(12, 4))
+    # 截取函数,限定到范围0-255
     plt.imshow(np.clip(im_obj, 0, 255).astype(np.int32))
 
     for r in anno.rects:
@@ -57,7 +70,9 @@ def _vis(im_obj, anno, index):
                  [r.y1, r.y1, r.y2, r.y2, r.y1])
         bottom_proj = _projection([r.x_3d, r.y_3d, r.z_3d], r.calib)
         plt.scatter(bottom_proj[0], bottom_proj[1])
-    plt.savefig('/home/mcg/{}'.format(index))
+
+    plt.show()
+    plt.savefig('/home/yappedyen/{}'.format(index))
     plt.close()
     return
 
@@ -101,6 +116,7 @@ def _jitter(im_obj, anno, jitter_pixel=24):
 def _flip(im_obj, anno):
     if np.random.uniform() < 0.5:
         return im_obj, anno
+    # 左右方向上翻转每行的元素，列保持不变，但是列的显示顺序变了。
     im_obj = np.fliplr(im_obj)
     height, width, channels = np.shape(im_obj)
     for r in anno.rects:
@@ -122,7 +138,7 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
     label_file: Path to file
 
     Returns:
-      Lists of rectangels: Cars and don't care area.
+      Lists of rectangles: Cars and don't care area.
     """
     """
     [['Car', '0.00', '0', '1.89', '561.93', '186.85', '698.62',  '273.77', 
@@ -148,6 +164,7 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
     calib_pinv = np.linalg.pinv(calib)
     rect_list = []
     for label in labels:
+        # 只检测 Car/Van/Truck
         if not (label[0] == 'Car' or label[0] == 'Van' or
                 label[0] == 'Truck' or label[0] == 'DontCare'):
             continue
@@ -170,6 +187,7 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
         assert object_rect.y1 < object_rect.y2
         object_rect.classID = class_id
 
+        # The ground truth rotation (in camera coordinates) is converted to the local coordinates.
         view_angle = np.arctan2(object_rect.z_3d, object_rect.x_3d)
         object_rect.alpha += view_angle - np.pi * 0.5
 
@@ -219,9 +237,16 @@ def _generate_mask(hypes, ignore_rects):
 
 
 def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
-    """Take the txt file and net configuration and create a generator
+    """
+    Take the txt file and net configuration and create a generator
     that outputs a jittered version of a random image from the annolist
-    that is mean corrected."""
+    that is mean corrected.
+    Args:
+        kitti_txt: path_to_txt
+        hypes: hypes
+        jitter: Image preprocessing
+        random_shuffel: Random sorting of images
+    """
     # /home/l4v/MonoGRNet/data/KittiBox
     base_path = os.path.realpath(os.path.dirname(kitti_txt))
     # ['training/image_2/00445.png training/label_2/00445.txt',...,'...']
@@ -230,8 +255,11 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
     if hypes['data']['truncate_data']:
         files = files[:10]
         random.seed(0)
+    # 无穷迭代器
+    # 将数据不断读取到队列
     for epoch in itertools.count():
         if random_shuffel:
+            # 将序列的所有元素随机排序
             random.shuffle(files)
         for file in files:
             image_file, gt_image_file = file.split(" ")  # image_address, label_address
@@ -253,7 +281,8 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             assert os.path.exists(gt_image_file), \
                 "File does not exist: %s" % gt_image_file
             # rect_list = [x1,y1,...]  读取label和calib
-            rect_list = read_kitti_anno(gt_image_file, calib_file, 
+            # 每一张图片注释的矩形框列表
+            rect_list = read_kitti_anno(gt_image_file, calib_file,
                                         detect_truck=hypes['detect_truck'])
 
             anno = AnnoLib.Annotation()
@@ -262,13 +291,16 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             im = imageio.imread(image_file)
             if im.shape[2] == 4:
                 im = im[:, :, :3]
-           
-            if jitter: 
+
+            if jitter:
+                # 图片翻转
                 im, anno = _flip(im, anno)
+                # 图片做一个起伏
                 im, anno = _jitter(im, anno)
+                # 图片增强并加噪
                 im = _noise(_enhance(im))
 
-               # _vis(im, anno, index)
+            # _vis(im, anno, index)
 
             # 变换图像尺寸
             anno = _rescale_boxes(im.shape, anno, hypes["image_height"], hypes["image_width"])
@@ -283,11 +315,9 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             # defined by center distance)
             # confs: [1, grid_height*grid_width, 1, max_len, 1]
             # record the valid boxes, since max_len is greater than the number of ground truth boxes
-            boxes, confs, calib, calib_pinv, xy_scale = annotation_to_h5(hypes, pos_anno,
-                                                                         hypes["grid_width"],
-                                                                         hypes["grid_height"],
-                                                                         hypes["rnn_len"])
-            # masks are zero in "Don't care" area 
+            boxes, confs, calib, calib_pinv, xy_scale = annotation_to_h5(hypes, pos_anno, hypes["grid_width"],
+                                                                         hypes["grid_height"], hypes["rnn_len"])
+            # masks are zero in "Don't care" area
             mask_list = [rect for rect in anno.rects if rect.classID == -1]
             mask = _generate_mask(hypes, mask_list)
 
@@ -300,7 +330,7 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             # 重点是：下一次迭代时，从上一次迭代遇到的yield后面的代码(下一行)开始执行。
             # 第一次调用时必须先next()或send(None)，否则会报错。
             # 通过重复调用next()方法，直到捕获一个异常。或者通过迭代（for）从上次位置开始
-            yield {"image": im, "boxes": boxes, "confs": confs, "calib": calib, "calib_pinv": calib_pinv, 
+            yield {"image": im, "boxes": boxes, "confs": confs, "calib": calib, "calib_pinv": calib_pinv,
                    "xy_scale": xy_scale, "rects": pos_list, "mask": mask}
 
 
@@ -312,7 +342,7 @@ def _make_sparse(n, d):
 
 def create_queues(hypes, phase):
     """Create Queues."""
-    hypes["rnn_len"] = 1
+
     dtypes = [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32]
     grid_size = hypes['grid_width'] * hypes['grid_height']
     shapes = ([hypes['image_height'], hypes['image_width'], 3],  # image
@@ -322,9 +352,9 @@ def create_queues(hypes, phase):
               [hypes['grid_height'], hypes['grid_width'], 3, 4],  # calib
               [hypes['grid_height'], hypes['grid_width'], 4, 3],  # calib_pinv
               [hypes['grid_height'], hypes['grid_width'], 2])     # x_scale y_scale 缩放比例
-    capacity = 30
+    capacity = 32
     # 创建一个队列存放数据
-    q = tf.FIFOQueue(capacity=capacity, dtypes=dtypes, shapes=shapes)
+    q = tf.queue.FIFOQueue(capacity=capacity, dtypes=dtypes, shapes=shapes)
     return q
 
 
@@ -354,7 +384,6 @@ def start_enqueuing_threads(hypes, q, phase, sess):
     confs_in = tf.placeholder(tf.float32)
     boxes_in = tf.placeholder(tf.float32)
     mask_in = tf.placeholder(tf.float32)
-
     calib_in = tf.placeholder(tf.float32)
     calib_pinv_in = tf.placeholder(tf.float32)
     xy_scale_in = tf.placeholder(tf.float32)
@@ -383,15 +412,13 @@ def start_enqueuing_threads(hypes, q, phase, sess):
     data_file = os.path.join(data_dir, data_file)  # ../data/KittiBox/train.txt
 
     # 返回的是生成器
-    gen = _load_kitti_txt(data_file, hypes,
-                          jitter={'train': hypes['solver']['use_jitter'],
-                                  'val': False}[phase])
+    gen = _load_kitti_txt(data_file, hypes, jitter={'train': hypes['solver']['use_jitter'], 'val': False}[phase])
     # 第一次调用gen用next(),yield的数据返回给data
     data = next(gen)
     sess.run(enqueue_op, feed_dict=make_feed(data))
     # 多线程
-    t = threading.Thread(target=thread_loop,
-                         args=(sess, enqueue_op, gen))
+    # 这个子线程用来装载数据
+    t = threading.Thread(target=thread_loop, args=(sess, enqueue_op, gen))
     # daemon守护线程，只有这个线程时，线程结束
     t.daemon = True
     # 线程启动
@@ -412,8 +439,28 @@ def inputs(hypes, q, phase):
         return image, (confidences, boxes, mask, calib, calib_pinv, xy_scale)
     elif phase == 'train':
         # dequeue_many(n)将n个元素连接到一起移出队列
+        # image=Tensor(shape=(8,384,1248,3))
+        # confidences=Tensor(shape=(8,12,39))
+        # boxes=Tensor(shape=(8,12,39,11))
+        # mask=Tensor(shape=(8,12,39))
+        # calib=Tensor(shape=(8,12,39,3,4))
+        # calib_pinv=Tensor(shape=(8,12,39,4,3))
+        # xy_scale=Tensor(shape=(8,12,39,2))
         image, confidences, boxes, mask, calib, calib_pinv, xy_scale = q.dequeue_many(hypes['batch_size'])
         image = _processe_image(hypes, image)
         return image, (confidences, boxes, mask, calib, calib_pinv, xy_scale)
     else:
         assert("Bad phase: {}".format(phase))
+
+
+if __name__ == '__main__':
+    with open("../hypes/kittiBox.json", 'r') as f:
+        logging.info("f: %s", f)
+        hype = json.load(f)
+
+    data_file1 = hype["data"]['%s_file' % 'train']  # train_file
+    data_dir1 = hype['dirs']['data_dir']
+    data_file1 = os.path.join(data_dir1, data_file1)
+
+    gen1 = _load_kitti_txt(data_file1, hype, jitter=False)
+    data1 = next(gen1)

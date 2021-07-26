@@ -4,28 +4,18 @@
 """Trains, evaluates and saves the MediSeg model."""
 import os
 import subprocess
-
 import scipy as scp
 import scipy.misc
 import imageio
 from PIL import Image
-
 import numpy as np
-
-import tensorflow as tf
-
 from include.utils import train_utils
 import time
-
 import random
-
 from include.utils.annolist import AnnotationLib as AnnLib
-
 import logging
-
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 
 
 def make_val_dir(hypes, validation=True):
@@ -56,8 +46,8 @@ def write_rects(rects, filename):
 
 
 def evaluate(hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax):
-    pred_annolist, image_list, dt, dt2 = get_results(
-        hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax, True)
+
+    pred_annolist, image_list, dt, dt2 = get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax, True)
 
     val_path = make_val_dir(hypes)
 
@@ -69,6 +59,7 @@ def evaluate(hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax):
     label_dir = os.path.join(hypes['dirs']['data_dir'],
                              hypes['data']['label_dir'])
 
+    # 运行由args参数提供的命令，等待命令执行结束并返回返回码。
     try:
         subprocess.check_call([eval_cmd, val_path, label_dir])
     except OSError as error:
@@ -116,10 +107,9 @@ def evaluate(hypes, sess, image_pl, calib_pl, xy_scale_pl, softmax):
 
 def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, validation=True):
 
-   
     pred_boxes = decoded_logits['pred_boxes_new']
    
-    #pred_boxes = decoded_logits['pred_bbox_proj']
+    # pred_boxes = decoded_logits['pred_bbox_proj']
     pred_depths = decoded_logits['pred_depths_new']
     pred_locations = decoded_logits['pred_locations_new']
     pred_confidences = decoded_logits['pred_confidences']
@@ -148,6 +138,7 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
     files = [line.rstrip() for line in open(kitti_txt)]
     base_path = os.path.realpath(os.path.dirname(kitti_txt))
 
+    # val_file 3769张图片
     for i, file in enumerate(files):
         image_file = file.split(" ")[0]
         if not validation and random.random() > 0.2:
@@ -167,7 +158,8 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
         xy_scale = np.repeat(xy_scale, hypes['grid_height'], axis=1)
         xy_scale = np.repeat(xy_scale, hypes['grid_width'], axis=2)
 
-        img = np.array(Image.fromarray(orig_img).resize((hypes["image_width"], hypes["image_height"]), resample=Image.CUBIC))
+        img = np.array(Image.fromarray(orig_img).resize((hypes["image_width"], hypes["image_height"]),
+                                                        resample=Image.CUBIC))
 
         calibs = [line.rstrip().split(' ') for line in open(calib_file)]
         assert calibs[2][0] == 'P2:'
@@ -177,7 +169,9 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
 
         feed = {image_pl: img, calib_pl: calib, xy_scale_pl: xy_scale}
 
-        (np_pred_boxes, np_pred_confidences, np_refined_global_corners) = sess.run([pred_boxes, pred_confidences, refined_global_corners], feed_dict=feed)
+        (np_pred_boxes, np_pred_confidences, np_refined_global_corners) = sess.run([pred_boxes, pred_confidences,
+                                                                                    refined_global_corners],
+                                                                                   feed_dict=feed)
         """
         depth_map = np.reshape(np_pred_depths, (12, 39))
         depth_map = depth_map / np.amax(depth_map)
@@ -221,17 +215,15 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
 
         pred_anno = AnnLib.Annotation()
         pred_anno.imageName = image_file
-        new_img, rects = train_utils.add_rectangles(
-            hypes, [img], np_pred_confidences,
-            np_pred_boxes, np_pred_depths, np_pred_locations, 
-            np_pred_corners, show_removed=False,
-            use_stitching=True, rnn_len=hypes['rnn_len'],
-            min_conf=0.50, tau=hypes['tau'], color_acc=(0, 255, 0))
-
+        new_img, rects = train_utils.add_rectangles(hypes, [img], np_pred_confidences, np_pred_boxes,
+                                                    np_pred_depths, np_pred_locations, np_pred_corners,
+                                                    show_removed=False, use_stitching=True, rnn_len=hypes['rnn_len'],
+                                                    min_conf=0.50, tau=hypes['tau'], color_acc=(0, 255, 0))
+        # 每15张图片保存到val_img
         if validation and i % 15 == 0:
             image_name = os.path.basename(pred_anno.imageName)
             image_name = os.path.join(img_dir, image_name)
-            imageio.imwrite(image_name, new_img)
+            imageio.imwrite(image_name, new_img.astype(np.uint8))
 
         if validation:
             image_name = os.path.basename(pred_anno.imageName)
@@ -258,17 +250,15 @@ def get_results(hypes, sess, image_pl, calib_pl, xy_scale_pl, decoded_logits, va
 
     start_time = time.time()
     for i in range(100):
-        (np_pred_boxes, np_pred_confidence, np_pred_depths, np_pred_locations) = \
+        (np_pred_boxes, np_pred_confidences, np_pred_depths, np_pred_locations) = \
          sess.run([pred_boxes, pred_confidences, pred_depths, pred_locations], feed_dict=feed)
     dt = (time.time() - start_time)/100
 
     start_time = time.time()
     for i in range(100):
-        train_utils.compute_rectangels(
-            hypes, np_pred_confidences,
-            np_pred_boxes, np_pred_depths, np_pred_locations, show_removed=False,
-            use_stitching=True, rnn_len=hypes['rnn_len'],
-            min_conf=0.001, tau=hypes['tau'])
+        train_utils.compute_rectangels(hypes, np_pred_confidences, np_pred_boxes, np_pred_depths, np_pred_locations,
+                                       show_removed=False, use_stitching=True, rnn_len=hypes['rnn_len'],
+                                       min_conf=0.001, tau=hypes['tau'])
     dt2 = (time.time() - start_time)/100
 
     return pred_annolist, image_list, dt, dt2

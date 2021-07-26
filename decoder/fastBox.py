@@ -3,10 +3,10 @@
 
 """Create the fastbox decoder. For a detailed description see:
 https://arxiv.org/abs/1612.07695 ."""
+
 import os
 import numpy as np
-import scipy as scp
-import random
+import imageio
 import pickle
 from include.utils import train_utils
 from include.utils import data_utils
@@ -51,7 +51,7 @@ def _roi_align(hyp, pred_boxes, early_feat, out_channels, crop_size, branch):
         filt = tf.get_variable('roi_align_conv', shape=(1, 1, in_channels, out_channels))
         conv = tf.nn.conv2d(roi_align, filt, [1, 1, 1, 1], padding='SAME')
         relu = tf.nn.relu(conv)
-        
+
         tf.add_to_collection('trainable', filt)
         tf.add_to_collection(branch, filt)
         filt_decay = tf.nn.l2_loss(filt) * 1e-4
@@ -125,15 +125,16 @@ def _build_corner_regression_layer(hype, pred_boxes, early_feat):
     tf.add_to_collection('corners_decay', corner_weights_decay)
 
     pred_corners = 3.0 * tf.tanh(tf.matmul(features, corner_weights))
-   
+
     return tf.reshape(pred_corners, (outer_size, 24))
 
 
 def compute_corners(hypes, dimensions, alpha):
     outer_size = hypes['grid_height'] * hypes['grid_width'] * hypes['batch_size']
+    # 3D object dimensions: height,width,length (meters)
     h, w, l = tf.split(tf.reshape(dimensions, (outer_size, 1, 3)), [1, 1, 1], axis=2)
     unrot = tf.concat([tf.concat([l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2], axis=2),
-                       tf.concat([w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2], axis=2)], axis=1) 
+                       tf.concat([w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2], axis=2)], axis=1)
     alpha_r = tf.reshape(alpha, (outer_size, 1))
     zeros = tf.zeros((outer_size, 1), dtype=tf.float32)
 
@@ -147,13 +148,12 @@ def compute_corners(hypes, dimensions, alpha):
     y_rot = tf.concat([zeros, zeros, zeros, zeros, -h, -h, -h, -h], axis=2)
 
     corners_rot = tf.reshape(tf.concat([x_rot, y_rot, z_rot], axis=1), (outer_size, 24))
-    return corners_rot  
+    return corners_rot
 
 
-def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels,
-            w_offsets, h_offsets):
+def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels, w_offsets, h_offsets):
 
-    '''
+    """
     Rezoom into a feature map at multiple interpolation points
     in a grid.
 
@@ -168,7 +168,7 @@ def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels,
     [o o o]
 
     Where each letter indexes into the feature map with bilinear interpolation
-    '''
+    """
     with tf.name_scope('rezoom'):
         grid_size = hyp['grid_width'] * hyp['grid_height']
         outer_size = grid_size * hyp['batch_size']
@@ -197,26 +197,27 @@ def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels,
 
 
 def _build_inner_layer(hyp, encoded_features, train):
-    '''
+    """
     Apply an 1x1 convolutions to compute inner features
     The layer consists of 1x1 convolutions implemented as
     matrix multiplication. This makes the layer very fast.
     The layer has "hyp['num_inner_channel']" channels
-    '''
+    """
+
     grid_size = hyp['grid_width'] * hyp['grid_height']
     outer_size = grid_size * hyp['batch_size']
 
     num_ex = hyp['batch_size'] * hyp['grid_width'] * hyp['grid_height']
-
+    # 512
     channels = int(encoded_features.shape[-1])
     hyp['cnn_channels'] = channels
+    # batch_size,12,39,512 -> [batch_size*468,512]
     hidden_input = tf.reshape(encoded_features, [num_ex, channels])
-
+    # 0.1
     scale_down = hyp['scale_down']
-
-    hidden_input = tf.reshape(
-        hidden_input * scale_down, (hyp['batch_size'] * grid_size, channels))
-
+    # hidden_input中值变为scale_down倍
+    hidden_input = tf.reshape(hidden_input * scale_down, (hyp['batch_size'] * grid_size, channels))
+    # 均匀分布初始化器
     initializer = tf.random_uniform_initializer(-0.1, 0.1)
 
     model_2D_path = os.path.join(hyp['dirs']['data_dir'], 'model_2D.pkl')
@@ -225,71 +226,78 @@ def _build_inner_layer(hyp, encoded_features, train):
         file.close()
 
     with tf.variable_scope('Overfeat'):
+        # 常量初始化器(512,512)
         trained_ip = tf.constant_initializer(value=data_dict['ip'])
+        # 创建新的tensorflow变量
         w = tf.get_variable(name='ip', initializer=trained_ip, shape=data_dict['ip'].shape)
+        # 矩阵乘法 (batch_size*468,512)
         output = tf.matmul(hidden_input, w)
 
     if train:
         # Adding dropout during training
+        # 减轻过拟合带来的问题
+        # 让每个神经元按照一定的概率停止工作，这次训练过程中不更新权值，也不参加神经网络的计算。但是它的权重依然存在，下次更新时可能会使用到它。
+        # 每一个元素被保存下的概率keep_prob
         output = tf.nn.dropout(output, 0.5)
     return output, data_dict
 
 
 def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, labels, train):
-    '''
+    """
     Build an 1x1 conv layer.
     The layer consists of 1x1 convolutions implemented as
     matrix multiplication. This makes the layer very fast.
     The layer has "hyp['num_inner_channel']" channels
-    '''
+    """
 
     grid_size = hyp['grid_width'] * hyp['grid_height']
     outer_size = grid_size * hyp['batch_size']
 
     width_range = np.arange(hyp['grid_width'])
     height_range = np.arange(hyp['grid_height'])
+    # 生成网格点坐标矩阵 468个点坐标
     width_range, height_range = np.meshgrid(width_range, height_range)
+    # 网格中心坐标
     x_offset = (width_range.flatten() + 0.5)*hyp['region_size']
     y_offset = (height_range.flatten() + 0.5)*hyp['region_size']
-    
-    xy_offset = np.concatenate([x_offset.reshape(1, grid_size, 1), 
-                                y_offset.reshape(1, grid_size, 1)], 
-                                axis=2).astype(np.float32)
+    # 按照axis的维度进行拼接
+    # (1,468,2)
+    xy_offset = np.concatenate([x_offset.reshape(1, grid_size, 1),
+                                y_offset.reshape(1, grid_size, 1)], axis=2).astype(np.float32)
+    # (batch_size,468,2)
     xy_offset = np.concatenate([xy_offset for _ in range(hyp['batch_size'])], axis=0)
+    # (batch_size*468,2) 每一个网格x,y的偏移量
     xy_offset = np.reshape(xy_offset, (outer_size, 2))
 
     trained_box_weights = tf.constant_initializer(value=data_dict['box_out'])
-
-    box_weights = tf.get_variable(name='box_out', initializer=trained_box_weights, 
+    # (512, 4)
+    box_weights = tf.get_variable(name='box_out', initializer=trained_box_weights,
                                   shape=data_dict['box_out'].shape)
+    # 利用L2范数来计算张量的误差值，但是没有开方并且只取L2范数的值的一半 output = sum(t**2)/2
     box_weights_decay = tf.nn.l2_loss(box_weights) * 1e-4
     tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, box_weights_decay)
 
     trained_conf_weights = tf.constant_initializer(value=data_dict['confs_out'])
+    # (512,2)
     conf_weights = tf.get_variable(name='confs_out', initializer=trained_conf_weights,
                                    shape=data_dict['confs_out'].shape)
     conf_weights_decay = tf.nn.l2_loss(conf_weights) * 1e-4
     tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES, conf_weights_decay)
-
-    pred_boxes = tf.reshape(tf.matmul(hidden_output, box_weights) * 50,
-                            [outer_size, 1, 4])
+    # (batch_size*468,1,4) box长、宽、ox，oy的参数
+    pred_boxes = tf.reshape(tf.matmul(hidden_output, box_weights) * 50, [outer_size, 1, 4])
 
     # hyp['rnn_len']
-    pred_logits = tf.reshape(tf.matmul(hidden_output, conf_weights),
-                             [outer_size, 1, hyp['num_classes']])
-
-    pred_logits_squash = tf.reshape(pred_logits,
-                                    [outer_size,
-                                     hyp['num_classes']])
-
+    # 全连接层的输出，logits就是一个向量，下一步将被投给 softmax 的向量
+    pred_logits = tf.reshape(tf.matmul(hidden_output, conf_weights), [outer_size, 1, hyp['num_classes']])
+    pred_logits_squash = tf.reshape(pred_logits, [outer_size, hyp['num_classes']])
+    # 类别置信度分数
     pred_confidences_squash = tf.nn.softmax(pred_logits_squash)
-    pred_confidences = tf.reshape(pred_confidences_squash,
-                                  [outer_size, hyp['rnn_len'],
-                                   hyp['num_classes']])
+    pred_confidences = tf.reshape(pred_confidences_squash, [outer_size, hyp['rnn_len'], hyp['num_classes']])
 
+    # depth大小(batch_size*468,1)
     depth_deep_feat = tf.reshape(logits['depth_deep_feat'], (outer_size, 128))
-    depth_weights = tf.get_variable('depth_out', 
-                                    shape=(128, 1))
+    depth_weights = tf.get_variable('depth_out', shape=(128, 1))
+    # 将tensor对象添加到列表
     tf.add_to_collection('trainable', depth_weights)
     tf.add_to_collection('depth', depth_weights)
 
@@ -297,12 +305,11 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
     tf.add_to_collection('new_weights', depth_weights_decay)
     tf.add_to_collection('depth_decay', depth_weights_decay)
 
-    pred_depths = tf.reshape(tf.matmul(depth_deep_feat, depth_weights),
-                             [outer_size, 1])
-    
+    pred_depths = tf.reshape(tf.matmul(depth_deep_feat, depth_weights), [outer_size, 1])
+
+    # 定位参数(batch_size*468,2)
     location_deep_feat = tf.reshape(logits['location_deep_feat'], (outer_size, 128))
-    location_weights = tf.get_variable('location_out', 
-                                        shape=(128, 2))
+    location_weights = tf.get_variable('location_out', shape=(128, 2))
     tf.add_to_collection('trainable', location_weights)
     tf.add_to_collection('location', location_weights)
 
@@ -318,13 +325,15 @@ def _build_output_layer(hyp, hidden_output, data_dict, logits, calib_pinv, label
     # pred_locations_proj = tf.reshape(xy_offset, (outer_size, 2))
 
     calib = tf.reshape(labels[3], (outer_size, 3, 4))
-    xy_scale = tf.reshape(labels[5], (outer_size, 2))   
+    xy_scale = tf.reshape(labels[5], (outer_size, 2))
     pred_locations_proj = pred_locations_proj / (xy_scale + 1e-7)
-
+    # calib[:,:2,2] = [batch_size*468,2,1]->(batch_size*468,2)第一维不变，第二维只要前两个，第三维只要索引为2的一列
     principle_points = tf.reshape(calib[:, :2, 2], (outer_size, 2))
+    # [batch_size*468,2,1]->(batch_size*468,2)
     translations = tf.reshape(calib[:, :2, 3], (outer_size, 2))
+    # [batch_size*468,1,1] -> (batch_size*468,1)
     focal_length = tf.reshape(calib[:, 0, 0], (outer_size, 1))
-
+    # 依次为ox, oy, width, height, height_3d, width_3d, length_3d, x_3d, y_3d, z_3d, alpha
     if train:
         boxes, dimensions, location, alpha = tf.split(labels[1], [4, 3, 3, 1], 3)
         location_x, location_y, depths = tf.split(location, [1, 1, 1], 3)
@@ -359,23 +368,25 @@ def _build_rezoom_layer(hyp, rezoom_input, data_dict, logits, train):
             w_offsets, h_offsets)
         if train:
             rezoom_features = tf.nn.dropout(rezoom_features, 0.5)
-
+        # (3744,2816)
         delta_features = tf.concat(
             axis=1,
             values=[hidden_output,
                     rezoom_features[:, 0, :] / 1000.])
         dim = 128
-        shape = [hyp['num_inner_channel'] + 
+        shape = [hyp['num_inner_channel'] +
                  early_feat_channels * num_offsets,
                  dim]
 
-        trained_delta1_weights = tf.constant_initializer(data_dict['delta1'])
-        delta_weights1 = tf.get_variable('delta1', initializer=trained_delta1_weights, 
+        trained_delta1_weights = tf.constant_initializer(data_dict['delta1'])# (2816,128)
+        delta_weights1 = tf.get_variable('delta1', initializer=trained_delta1_weights,
                                          shape=data_dict['delta1'].shape)
+
         # TODO: maybe adding dropout here?
+        # (3744,128)
         ip1 = tf.nn.relu(tf.matmul(delta_features, delta_weights1))
         if train:
-            ip1 = tf.nn.dropout(ip1, 0.5)        
+            ip1 = tf.nn.dropout(ip1, 0.5)
 
         trained_delta2_weights = tf.constant_initializer(value=data_dict['delta2'])
         delta_confs_weights = tf.get_variable(
@@ -414,14 +425,14 @@ def _bbox_from_corners(hyp, global_corners, calib, xy_scale):
     outer_size = grid_size * hyp['batch_size']
     global_corners_expand = tf.concat([tf.reshape(global_corners, (outer_size, 3, 8)),
                                        tf.constant(np.ones((outer_size, 1, 8)), dtype=tf.float32)],
-                                       axis=1)
+                                      axis=1)
     calib_r = tf.reshape(calib, (outer_size, 3, 4))
     xy_scale_r = tf.reshape(xy_scale, (outer_size, 2))
     xz = tf.reduce_sum(tf.reshape(calib_r[:, 0, :], (outer_size, 4, 1)) * global_corners_expand, axis=1)
     yz = tf.reduce_sum(tf.reshape(calib_r[:, 1, :], (outer_size, 4, 1)) * global_corners_expand, axis=1)
     z = tf.reduce_sum(tf.reshape(calib_r[:, 2, :], (outer_size, 4, 1)) * global_corners_expand, axis=1)
     x_scale, y_scale = tf.split(xy_scale_r, [1, 1], axis=1)
-    x = tf.clip_by_value(xz * x_scale / (z + 1e-5), 0, hyp['image_width'] - 1) 
+    x = tf.clip_by_value(xz * x_scale / (z + 1e-5), 0, hyp['image_width'] - 1)
     y = tf.clip_by_value(yz * y_scale / (z + 1e-5), 0, hyp['image_height'] - 1)
     left = tf.reduce_min(x, axis=1, keep_dims=True)
     right = tf.reduce_max(x, axis=1, keep_dims=True)
@@ -483,8 +494,8 @@ def _build_td_confidence_layer(hyp, dlogits, early_feat, hidden_output, confiden
                                      hyp['num_classes']])
     pred_td_confidences_squash = tf.nn.softmax(pred_td_confs_delta)
     pred_td_confidences = tf.reshape(pred_td_confidences_squash,
-                                    [outer_size, hyp['rnn_len'],
-                                     hyp['num_classes']])
+                                     [outer_size, hyp['rnn_len'],
+                                      hyp['num_classes']])
     return pred_td_confidences, pred_bbox_proj
 
 
@@ -493,11 +504,11 @@ def _build_refine_layer(hyp, logits, pred_bbox_proj):
     outer_size = grid_size * hyp['batch_size']
     out_channels = 256
     crop_size = 16
-    depth_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['depth_deep_feat'], 
+    depth_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['depth_deep_feat'],
                                        out_channels, crop_size, 'refine_depth_feat', 'refine')
-    location_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['location_early_feat'], 
+    location_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['location_early_feat'],
                                           out_channels, crop_size, 'refine_location_feat', 'refine')
-    corner_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['corner_early_feat'], 
+    corner_feat = _roi_align_keep_ratio(hyp, pred_bbox_proj, logits['corner_early_feat'],
                                         out_channels, crop_size, 'refine_corner_feat', 'refine')
     refine_feat = depth_feat + location_feat + corner_feat
 
@@ -505,7 +516,7 @@ def _build_refine_layer(hyp, logits, pred_bbox_proj):
     bias_1 = tf.get_variable('refine_bias_1', shape=(256, ))
     filt_2 = tf.get_variable('refine_filt_2', shape=(3, 3, 256, 256))
     bias_2 = tf.get_variable('refine_bias_2', shape=(256, ))
-    fc_weight = tf.get_variable('refine_fc_weight', shape=(256*(crop_size // 4)**2, 24)) 
+    fc_weight = tf.get_variable('refine_fc_weight', shape=(256*(crop_size // 4)**2, 24))
 
     conv_1 = tf.nn.conv2d(refine_feat, filt_1, [1, 2, 2, 1], padding='SAME')
     add_bias_1 = tf.nn.bias_add(conv_1, bias_1)
@@ -517,7 +528,7 @@ def _build_refine_layer(hyp, logits, pred_bbox_proj):
 
     feat_r = tf.reshape(relu_2, (outer_size, -1))
     delta_global_corners = 2.0 * tf.tanh(tf.matmul(feat_r, fc_weight))
-    
+
     vars = [filt_1, bias_1, filt_2, bias_2, fc_weight]
     for var in vars:
         tf.add_to_collection('trainable', var)
@@ -529,19 +540,24 @@ def _build_refine_layer(hyp, logits, pred_bbox_proj):
 
 
 def decoder(hyp, logits, labels, train):
-    """Apply decoder to the logits.
+    """
+    Apply decoder to the logits.
 
     Computation which decode CNN boxes.
     The output can be interpreted as bounding Boxes.
 
 
     Args:
-      logits: Logits tensor, output von encoder
+        hyp: hyper_parameter
+        logits: Logits tensor, output von encoder
+        labels: labels
+        train: bool
 
     Return:
       decoded_logits: values which can be interpreted as bounding boxes
     """
-    hyp['rnn_len'] = 1
+
+    # pool5层 (batch_size,12,39,512)
     encoded_features = logits['deep_feat']
 
     batch_size = hyp['batch_size']
@@ -549,22 +565,29 @@ def decoder(hyp, logits, labels, train):
     if not train:
         hyp['batch_size'] = 1
 
+    # 468
     grid_size = hyp['grid_width']*hyp['grid_height']
+    # 468*batch_size
     outer_size = grid_size*hyp['batch_size']
 
     early_feat = logits['early_feat']
 
     initializer = tf.random_uniform_initializer(-0.1, 0.1)
 
-    with tf.variable_scope('decoder', initializer=initializer):
+    with tf.compat.v1.variable_scope('decoder', initializer=initializer):
         with tf.name_scope('inner_layer'):
             # Build inner layer.
             # See https://arxiv.org/abs/1612.07695 fig. 2 for details
+
+            # hidden_output(batch_size*468,512) data_dict->装载的权重
             hidden_output, data_dict = _build_inner_layer(hyp, encoded_features, train)
 
         with tf.name_scope('output_layer'):
             # Build output layer
             # See https://arxiv.org/abs/1612.07695 fig. 2 for details
+
+            # boxs(batch_size*468,1,4) logits(batch_size*468,1,2) confidences(batch_size*468,1,2)
+            # depths(batch_size*468,1) locations(batch_size*468,3)
             calib_pinv = None
             pred_boxes, pred_logits, pred_confidences, pred_depths, pred_locations = _build_output_layer(
                 hyp, hidden_output, data_dict, logits, calib_pinv, labels, train)
@@ -573,18 +596,19 @@ def decoder(hyp, logits, labels, train):
         dlogits = {}
         current_pred_boxes = pred_boxes
         if hyp['use_rezoom']:
-            rezoom_input = pred_boxes, pred_logits, pred_confidences, pred_depths, pred_locations, \
-                early_feat, hidden_output
+            rezoom_input = pred_boxes, pred_logits, pred_confidences, \
+                           pred_depths, pred_locations, early_feat, hidden_output
             # Build rezoom layer
             # See https://arxiv.org/abs/1612.07695 fig. 2 for details
             rezoom_output = _build_rezoom_layer(hyp, rezoom_input, data_dict, logits, train)
 
-            pred_boxes, pred_logits, pred_confidences, \
-                pred_confs_deltas, pred_boxes_deltas, pred_depths_deltas, pred_locations_deltas, confidence_weights = rezoom_output
+            pred_boxes, pred_logits, pred_confidences, pred_confs_deltas, \
+                pred_boxes_deltas, pred_depths_deltas, pred_locations_deltas, confidence_weights = rezoom_output
 
             dlogits['pred_confs_deltas'] = pred_confs_deltas
+
             dlogits['pred_boxes_deltas'] = pred_boxes_deltas
-         
+
             dlogits['pred_boxes_new'] = pred_boxes + pred_boxes_deltas
 
             dlogits['pred_depths_deltas'] = pred_depths_deltas
@@ -594,17 +618,30 @@ def decoder(hyp, logits, labels, train):
             dlogits['pred_locations_deltas'] = pred_locations_deltas
 
             dlogits['pred_locations_new'] = pred_locations_deltas + pred_locations
- 
+
             current_pred_boxes = dlogits['pred_boxes_new']
 
+        # regress the eight corners. dlogits['pred_corners'] is in local coordinates, so the corners has zero mean.
+        # In our paper, we are supposed to first rotate the corners back to camera coordinates,
+        # then add a C (which is pred_locations). But now we skip the rotating in implementation, and resolve it later
+        # The object only rotates wrt. the vertical axis. So the rotation correction from camera coordinates to
+        # local coordinates is quite simple. Just compute phi. So we did not compute R or
+        # use matrix multiplication in implementation.
         with tf.name_scope('corner_regression_layer'):
             dlogits['pred_corners'] = _build_corner_regression_layer(hyp, current_pred_boxes, logits['corner_early_feat'])
 
-        dlogits['pred_td_confidence'], dlogits['pred_bbox_proj'] = _build_td_confidence_layer(hyp, dlogits, early_feat, hidden_output, confidence_weights, labels, train)
-
+        # pred_bbox_proj是由pred_locations_new + pred_corners投影而来
+        dlogits['pred_td_confidence'], dlogits['pred_bbox_proj'] = _build_td_confidence_layer(hyp, dlogits, early_feat,
+                                                                                              hidden_output,
+                                                                                              confidence_weights,
+                                                                                              labels, train)
+        # 根据pred_bbox_proj优化得到delta_global_corners
         dlogits['delta_global_corners'] = _build_refine_layer(hyp, logits, dlogits['pred_bbox_proj'])
-
-        dlogits['pred_global_corners'] = tf.reshape(tf.reshape(pred_locations, (outer_size, 3, 1)) + tf.reshape(dlogits['pred_corners'], (outer_size, 3, 8)), (outer_size, 24))
+        # Ocam = R * Ok + C
+        # 24个corners 相机坐标系下
+        dlogits['pred_global_corners'] = tf.reshape(tf.reshape(pred_locations, (outer_size, 3, 1)) +
+                                                    tf.reshape(dlogits['pred_corners'], (outer_size, 3, 8)),
+                                                    (outer_size, 24))
 
         dlogits['refined_global_corners'] = dlogits['pred_global_corners'] + dlogits['delta_global_corners']
 
@@ -614,8 +651,6 @@ def decoder(hyp, logits, labels, train):
     dlogits['pred_confidences'] = pred_confidences
     dlogits['pred_depths'] = pred_depths
     dlogits['pred_locations'] = pred_locations
-
-    hyp['batch_size'] = batch_size
 
     return dlogits
 
@@ -668,8 +703,8 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input, slow=False):
     delta_residual = tf.reshape(delta_unshaped * pred_mask,
                                 [outer_size, hypes['rnn_len'], 4])
     sqrt_delta = tf.minimum(tf.square(delta_residual), 10. ** 2)
-    delta_boxes_loss = tf.reduce_sum(sqrt_delta) / outer_size * head[1] * 0.05 
-   
+    delta_boxes_loss = tf.reduce_sum(sqrt_delta) / outer_size * head[1] * 0.05
+
     pred_mask = tf.squeeze(pred_mask, 2)
 
     """
@@ -688,15 +723,17 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input, slow=False):
 
 
 def loss(hypes, decoded_logits, labels, slow=False):
-    """Calculate the loss from the logits and the labels.
+    """
+    Calculate the loss from the logits and the labels.
 
     Args:
-      decoded_logits: output of decoder
-      labels: Labels tensor; Output from data_input
-
-      flags: 0 if object is present 1 otherwise
-      confidences: ??
-      boxes: encoding of bounding box location
+        hypes:
+        decoded_logits: output of decoder
+        labels: Labels tensor; Output from data_input
+        slow:
+        # flags: 0 if object is present 1 otherwise
+        # confidences: ??
+        # boxes: encoding of bounding box location
 
     Returns:
       loss: Loss tensor of type float.
@@ -705,14 +742,16 @@ def loss(hypes, decoded_logits, labels, slow=False):
     confidences, boxes, mask, calib, calib_pinv, z_3d_scale = labels
     boxes, dimensions, location, alpha = tf.split(boxes, [4, 3, 3, 1], 3)
     location_x, location_y, depths = tf.split(location, [1, 1, 1], 3)
+    # local_corners
     true_corners = compute_corners(hypes, dimensions, alpha)
 
-    pred_boxes = decoded_logits['pred_boxes']
     pred_logits = decoded_logits['pred_logits']
-    pred_confidences = decoded_logits['pred_confidences']
 
-    pred_confs_deltas = decoded_logits['pred_confs_deltas']
+    pred_boxes = decoded_logits['pred_boxes']
     pred_boxes_deltas = decoded_logits['pred_boxes_deltas']
+
+    pred_confidences = decoded_logits['pred_confidences']
+    pred_confs_deltas = decoded_logits['pred_confs_deltas']
 
     pred_depths = decoded_logits['pred_depths']
     pred_depths_deltas = decoded_logits['pred_depths_deltas']
@@ -735,12 +774,11 @@ def loss(hypes, decoded_logits, labels, slow=False):
 
     # Compute confidence loss
     confidences = tf.reshape(confidences, (outer_size, 1))
-    true_classes = tf.reshape(tf.cast(tf.greater(confidences, 0), 'int64'),
-                              [outer_size])
+    true_classes = tf.reshape(tf.cast(tf.greater(confidences, 0), 'int64'), [outer_size])
 
     pred_classes = tf.reshape(pred_logits, [outer_size, hypes['num_classes']])
     mask_r = tf.reshape(mask, [outer_size])
-
+    # 计算logits 和 labels 之间的稀疏softmax 交叉熵
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits=pred_classes, labels=true_classes)
 
@@ -751,8 +789,7 @@ def loss(hypes, decoded_logits, labels, slow=False):
     true_boxes = tf.reshape(boxes, (outer_size, hypes['rnn_len'], 4))
 
     # box loss for background prediction needs to be zerod out
-    boxes_mask = tf.reshape(
-        tf.cast(tf.greater(confidences, 0), 'float32'), (outer_size, 1, 1))
+    boxes_mask = tf.reshape(tf.cast(tf.greater(confidences, 0), 'float32'), (outer_size, 1, 1))
 
     # danger zone
     residual = (true_boxes - pred_boxes) * boxes_mask
@@ -760,31 +797,32 @@ def loss(hypes, decoded_logits, labels, slow=False):
     boxes_loss = tf.reduce_sum(tf.abs(residual)) / outer_size * head[1]
 
     true_depths = tf.reshape(depths, (outer_size, 1))
-   
+
     """ 
     depths_residual = ((true_depths - pred_depths) * boxes_mask) / (true_depths + 1e-5)
     depths_loss = tf.reduce_sum(tf.abs(depths_residual)) / (1e-5 + tf.reduce_sum(boxes_mask)) * head[1] * regression_weights[0]
     """
- 
+
     depths_loss = tf.reduce_sum(tf.abs(true_depths - pred_depths) * tf.reshape(boxes_mask, (outer_size, 1))) / outer_size
 
-    true_locations = tf.reshape(location, (outer_size, 3))    
-
+    true_locations = tf.reshape(location, (outer_size, 3))
     locations_loss = tf.reduce_sum(tf.abs(true_locations - pred_locations) * tf.reshape(boxes_mask, (outer_size, 1))) / outer_size
 
     boxes_mask = tf.reshape(boxes_mask, (outer_size, 1))
+
     corners_loss = tf.reduce_sum(tf.abs(true_corners - pred_corners) * boxes_mask) / outer_size * 0.5
 
     refine_loss = tf.reduce_sum(tf.abs(refined_global_corners - true_global_corners) * boxes_mask) / outer_size * 0.5
 
-    boxes_mask = tf.reshape(boxes_mask, (outer_size, 1, 1))     
+    boxes_mask = tf.reshape(boxes_mask, (outer_size, 1, 1))
 
-    joint_2d_3d = False
+    joint_2d_3d = True
     joint_3d = False
     depth = False
     location = False
     corners = False
-    refine = True
+    # refined_global_corners
+    refine = False
 
     location_refine = False
 
@@ -803,10 +841,11 @@ def loss(hypes, decoded_logits, labels, slow=False):
         _add_rezoom_loss_histograms(hypes, pred_boxes_deltas)
 
         if joint_2d_3d:
-            loss = 10 * depths_loss + 10 * delta_depths_loss + 10 * locations_loss + 10 * delta_locations_loss + 10 * corners_loss + \
-                   confidences_loss + delta_confs_loss + boxes_loss + delta_boxes_loss + 10 * refine_loss
-            weights_loss = 0.1 * tf.add_n(tf.get_collection('new_weights')) + 0.1 * tf.add_n(tf.get_collection(reg_loss_col),
-                                                                                     name='reg_loss')
+            loss = 10 * depths_loss + 10 * delta_depths_loss + 10 * locations_loss + 10 * delta_locations_loss + \
+                   10 * corners_loss + confidences_loss + delta_confs_loss + boxes_loss + delta_boxes_loss + \
+                   10 * refine_loss
+            weights_loss = 0.1 * tf.add_n(tf.get_collection('new_weights')) + 0.1 * tf.add_n(
+                tf.get_collection(reg_loss_col), name='reg_loss')
 
         elif joint_3d:
             loss = depths_loss + delta_depths_loss + locations_loss + delta_locations_loss + corners_loss + refine_loss
@@ -814,7 +853,7 @@ def loss(hypes, decoded_logits, labels, slow=False):
 
         elif depth:
             loss = depths_loss + delta_depths_loss
-            weights_loss = 0.1 * tf.add_n(tf.get_collection('depth_decay')) 
+            weights_loss = 0.1 * tf.add_n(tf.get_collection('depth_decay'))
         elif location:
             loss = locations_loss + delta_locations_loss
             weights_loss = 0.1 * tf.add_n(tf.get_collection('location_decay'))
@@ -828,21 +867,23 @@ def loss(hypes, decoded_logits, labels, slow=False):
 
         elif location_refine:
             loss = refine_loss + locations_loss + delta_locations_loss
-            weights_loss = 0.1 * tf.add_n(tf.get_collection('refine_decay')) + 0.1 * tf.add_n(tf.get_collection('location_decay'))
+            weights_loss = 0.1 * tf.add_n(tf.get_collection('refine_decay')) + 0.1 * tf.add_n(
+                tf.get_collection('location_decay'))
 
-    tf.add_to_collection('total_losses', tf.reduce_sum(loss))  
+    tf.add_to_collection('total_losses', tf.reduce_sum(loss))
 
-    total_loss = tf.reduce_sum(weights_loss + loss) 
-    losses = {}
-    losses['total_loss'] = total_loss
-    losses['loss'] = loss
-    losses['confidences_loss'] = confidences_loss
-    losses['boxes_loss'] = boxes_loss
-    losses['weight_loss'] = weights_loss
-    losses['depths_loss'] = depths_loss
-    losses['locations_loss'] = locations_loss
-    losses['corners_loss'] = corners_loss
-    losses['refine_loss'] = refine_loss
+    total_loss = tf.reduce_sum(weights_loss + loss)
+    losses = {
+        'total_loss': total_loss,
+        'loss': loss,
+        'confidences_loss': confidences_loss,
+        'boxes_loss': boxes_loss,
+        'weight_loss': weights_loss,
+        'depths_loss': depths_loss,
+        'locations_loss': locations_loss,
+        'corners_loss': corners_loss,
+        'refine_loss': refine_loss
+    }
 
     if hypes['use_rezoom']:
         losses['delta_boxes_loss'] = delta_boxes_loss
@@ -894,11 +935,14 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
     locations_error = tf.reduce_sum(tf.abs(pred_locations_r - true_locations) * boxes_mask) / (positive_count + 1e-2)
 
     true_corners = compute_corners(hyp, dimensions, alpha)
-    true_global_corners = tf.reshape(tf.reshape(location, (outer_size, 3, 1)) + tf.reshape(true_corners, (outer_size, 3, 8)), (outer_size, 24))
-    global_corners_error = tf.reduce_sum(tf.abs(pred_global_corners - true_global_corners) * boxes_mask) / (positive_count * 24 + 1e-2)
-    refined_corners_error = tf.reduce_sum(tf.abs(refined_global_corners - true_global_corners) * boxes_mask) / (positive_count * 24 + 1e-2)
+    true_global_corners = tf.reshape(tf.reshape(location, (outer_size, 3, 1)) + tf.reshape(
+        true_corners, (outer_size, 3, 8)), (outer_size, 24))
+    global_corners_error = tf.reduce_sum(tf.abs(pred_global_corners - true_global_corners) *
+                                         boxes_mask) / (positive_count * 24 + 1e-2)
+    refined_corners_error = tf.reduce_sum(tf.abs(refined_global_corners - true_global_corners) *
+                                          boxes_mask) / (positive_count * 24 + 1e-2)
 
-    '''
+    """
     eval_list = []
     eval_list.append(('Acc.', accuracy))
     eval_list.append(('Conf', losses['confidences_loss']))
@@ -912,7 +956,7 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
                                                  losses['delta_confs_loss'] + \
                                                  losses['delta_depths_loss'] + \
                                                  losses['delta_locations_loss'])))
-    '''
+    """
 
     eval_list = []
     eval_list.append(('Weight', losses['weight_loss']))
@@ -932,56 +976,45 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
 
     # Log Images
     # show ground truth to verify labels are correct
-    pred_confidences_r = tf.reshape(
-        pred_confidences,
-        [hyp['batch_size'], grid_size, hyp['rnn_len'], hyp['num_classes']])
+    pred_confidences_r = tf.reshape(pred_confidences, [hyp['batch_size'], grid_size,
+                                                       hyp['rnn_len'], hyp['num_classes']])
 
     # show predictions to visualize training progress
-    pred_boxes_r = tf.reshape(
-        pred_boxes, [hyp['batch_size'], grid_size, hyp['rnn_len'],
-                     4])
-
-    pred_corners_r = tf.reshape(pred_corners, [hyp['batch_size'], grid_size, 24])
-
+    pred_boxes_r = tf.reshape(pred_boxes, [hyp['batch_size'], grid_size, hyp['rnn_len'], 4])
     pred_depths_r = tf.reshape(pred_depths, [hyp['batch_size'], grid_size, hyp['rnn_len'], 1])
     pred_locations_r = tf.reshape(pred_locations, [hyp['batch_size'], grid_size, hyp['rnn_len'], 3])
+    pred_corners_r = tf.reshape(pred_corners, [hyp['batch_size'], grid_size, 24])
 
     test_pred_confidences = pred_confidences_r[0, :, :, :]
     test_pred_boxes = pred_boxes_r[0, :, :, :]
     test_pred_depths = pred_depths_r[0, :, :, :]
     test_pred_locations = pred_locations_r[0, :, :, :]
-
     test_pred_corners = pred_corners_r[0, :, :]
 
     def log_image(np_img, np_confidences, np_boxes, np_depths, np_locations, np_corners, np_global_step, pred_or_true):
 
         if pred_or_true == 'pred':
-            plot_image = train_utils.add_rectangles(
-                hyp, np_img, np_confidences, np_boxes, np_depths, np_locations, np_corners, use_stitching=True,
-                rnn_len=hyp['rnn_len'])[0]
+            plot_image = train_utils.add_rectangles(hyp, np_img, np_confidences, np_boxes,
+                                                    np_depths, np_locations, np_corners, use_stitching=True,
+                                                    rnn_len=hyp['rnn_len'])[0]
         else:
             np_mask = np_boxes
-            plot_image = data_utils.draw_encoded(
-                np_img[0], np_confidences[0], mask=np_mask[0], cell_size=32)
+            plot_image = data_utils.draw_encoded(np_img[0], np_confidences[0], mask=np_mask[0], cell_size=32)
 
         num_images = 20
 
-        filename = '%s_%s.jpg' % \
-            ((np_global_step // hyp['logging']['write_iter'])
-                % num_images, pred_or_true)
+        filename = '%s_%s.jpg' % ((np_global_step // hyp['logging']['write_iter']) % num_images, pred_or_true)
         img_path = os.path.join(hyp['dirs']['output_dir'], filename)
-
-        scp.misc.imsave(img_path, plot_image)
+        imageio.imsave(img_path, plot_image.astype(np.uint8))
 
         return plot_image
 
+    # 包装一个普通的 Python 函数，这个函数接受 numpy 的数组作为输入和输出，让这个函数可以作为 TensorFlow 计算图上的计算节点 OP 来使用。
     pred_log_img = tf.py_func(log_image,
-                              [images, test_pred_confidences,
-                               test_pred_boxes, test_pred_depths, test_pred_locations, test_pred_corners,
-                               global_step, 'pred'], [tf.float32])
+                              [images, test_pred_confidences, test_pred_boxes, test_pred_depths, test_pred_locations,
+                               test_pred_corners, global_step, 'pred'], [tf.float32])
 
     true_log_img = tf.py_func(log_image,
                               [images, confidences, mask, test_pred_depths, test_pred_locations, test_pred_corners,
-                               global_step, 'true'],
-                              [tf.uint8])
+                               global_step, 'true'], [tf.uint8])
     return eval_list

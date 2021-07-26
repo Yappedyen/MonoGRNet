@@ -9,14 +9,11 @@ import logging
 import numpy as np
 import os.path
 import sys
-
-import scipy as scp
-import scipy.misc
+import imageio
 import time
 from shutil import copyfile
-from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-import string
+
 import include.tensorvision.utils as utils
 import include.tensorvision.core as core
 # configure logging
@@ -37,12 +34,11 @@ def _copy_parameters_to_traindir(hypes, input_file, target_name, target_dir):
         name of source file
     target_name : str
         target name
-    train_dir : str
+    # train_dir : str
         directory where training data is saved
     """
     target_file = os.path.join(target_dir, target_name)
-    input_file = os.path.os.path.realpath(
-        os.path.join(hypes['dirs']['base_path'], input_file))
+    input_file = os.path.realpath(os.path.join(hypes['dirs']['base_path'], input_file))
     copyfile(input_file, target_file)
 
 
@@ -57,10 +53,8 @@ def initialize_training_folder(hypes, files_dir="model_files", logging=True):
     ----------
     hypes : dict
         Hyperparameters
-
     files_dir:
         "model_files"
-
     logging:
         True
     """
@@ -87,17 +81,16 @@ def initialize_training_folder(hypes, files_dir="model_files", logging=True):
         # 编码json数据，indent缩进值,按顺序输出
         json.dump(hypes, outfile, indent=2, sort_keys=True)
     # 将input/arch/object/optimizer/evaluator.py拷贝到model_files文件夹中
-    _copy_parameters_to_traindir(
-        hypes, hypes['model']['input_file'], "data_input.py", target_dir)
-    _copy_parameters_to_traindir(
-        hypes, hypes['model']['architecture_file'], "architecture.py",
-        target_dir)
-    _copy_parameters_to_traindir(
-        hypes, hypes['model']['objective_file'], "objective.py", target_dir)
-    _copy_parameters_to_traindir(
-        hypes, hypes['model']['optimizer_file'], "solver.py", target_dir)
-    _copy_parameters_to_traindir(
-        hypes, hypes['model']['evaluator_file'], "eval.py", target_dir)
+    _copy_parameters_to_traindir(hypes, hypes['model']['input_file'],
+                                 "data_input.py", target_dir)
+    _copy_parameters_to_traindir(hypes, hypes['model']['architecture_file'],
+                                 "architecture.py", target_dir)
+    _copy_parameters_to_traindir(hypes, hypes['model']['objective_file'],
+                                 "objective.py", target_dir)
+    _copy_parameters_to_traindir(hypes, hypes['model']['optimizer_file'],
+                                 "solver.py", target_dir)
+    _copy_parameters_to_traindir(hypes, hypes['model']['evaluator_file'],
+                                 "eval.py", target_dir)
 
 
 def maybe_download_and_extract(hypes):
@@ -118,8 +111,7 @@ def maybe_download_and_extract(hypes):
 def _write_eval_dict_to_summary(eval_dict, tag, summary_writer, global_step):
     summary = tf.Summary()
     for name, result in eval_dict:
-        summary.value.add(tag=tag + '/' + name,
-                          simple_value=result)
+        summary.value.add(tag=tag + '/' + name, simple_value=result)
     summary_writer.add_summary(summary, global_step)
     return
 
@@ -131,7 +123,7 @@ def _write_images_to_summary(images, summary_writer, step):
         image = image.reshape(1, shape[0], shape[1], shape[2])
         with tf.Graph().as_default():
             with tf.device('/cpu:0'):
-                log_image = tf.summary.image(name, image)
+                log_image = tf.compat.v1.summary.image(name, image)
             with tf.Session() as sess:
                 summary_str = sess.run([log_image])
                 summary_writer.add_summary(summary_str[0], step)
@@ -147,16 +139,16 @@ def _write_images_to_disk(hypes, images, step):
         os.mkdir(image_dir)
     for name, image in images:
         file_name = os.path.join(image_dir, name)
-        scp.misc.imsave(file_name, image)
+        imageio.imsave(file_name, image.astype(np.uint8))
 
 
 def _print_eval_dict(eval_names, eval_results, prefix=''):
     print_str = ','.join([nam + ": %.2f" for nam in eval_names])
-    print_str = "   " + prefix + "  " + print_str
+    print_str = " " + prefix + " " + print_str
     logging.info(print_str % tuple(eval_results))
 
 
-class ExpoSmoother():
+class ExpoSmoother:
     """docstring for expo_smoother"""
     def __init__(self, decay=0.9):
         self.weights = None
@@ -171,11 +163,13 @@ class ExpoSmoother():
             return self.weights
 
     def get_weights(self):
+        # 转化为list
         return self.weights.tolist()
 
 
-class MedianSmoother():
+class MedianSmoother:
     """docstring for expo_smoother"""
+
     def __init__(self, num_entries=50):
         self.weights = None
         self.num = 50
@@ -197,126 +191,133 @@ class MedianSmoother():
 
 
 def run_training(hypes, modules, tv_graph, tv_sess, start_step=0):
-    """Run one iteration of training."""
+    """
+    Run one iteration of training.
+    """
     # Unpack operations for later use
     summary = tf.Summary()
     sess = tv_sess['sess']
     summary_writer = tv_sess['writer']
 
     solver = modules['solver']
-
+    # 500
     display_iter = hypes['logging']['display_iter']
-    write_iter = hypes['logging'].get('write_iter', 5*display_iter)
+    # if 不存在，返回默认值
+    write_iter = hypes['logging'].get('write_iter', 5 * display_iter)
+    # 4000
     eval_iter = hypes['logging']['eval_iter']
     save_iter = hypes['logging']['save_iter']
-    image_iter = hypes['logging'].get('image_iter', 5*save_iter)
+    # 150000
+    image_iter = hypes['logging'].get('image_iter', 5 * save_iter)
     dict_smoother = ExpoSmoother(0.95)
     py_smoother = MedianSmoother(20)
     n = 0
-
+    # eval_name:('Weight','Boxes','Delta','Confidence','Delta','Depth','Error','Location','Error','Corner','Error','Refine'
     eval_names, eval_ops = zip(*tv_graph['eval_list'])
     # Run the training Step
     start_time = time.time()
-    for step in range(start_step, hypes['solver']['max_steps']):
+    for step in range(start_step, hypes['solver']['max_steps']+1):
         regression_weights = solver.get_regression_weights(step, 1.0)
         lr = solver.get_learning_rate(hypes, step)
-        feed_dict = {tv_graph['learning_rate']: lr, 
-                     hypes['solver']['regression_weights']: regression_weights}
+        feed_dict = {
+            tv_graph['learning_rate']: lr,
+            hypes['solver']['regression_weights']: regression_weights
+        }
         if step % display_iter:
             sess.run([tv_graph['train_op']], feed_dict=feed_dict)
 
         # Write the summaries and print an overview fairly often.
+        # 每display_iter次迭代打印训练状态
         elif step % display_iter == 0:
             # Print status to stdout.
             _, loss_value, training_loss, eval_results = sess.run([tv_graph['train_op'],
-                                      tv_graph['losses']['total_loss'], tv_graph['losses'], 
-                                      eval_ops],
-                                     feed_dict=feed_dict)
-            _print_training_status(hypes, step, loss_value, start_time, lr)    
-            _print_eval_dict(eval_names, eval_results, prefix='   (raw)')
+                                                                   tv_graph['losses']['total_loss'],
+                                                                   tv_graph['losses'], eval_ops],
+                                                                  feed_dict=feed_dict)
+            # 打印training状态
+            _print_training_status(hypes, step, loss_value, start_time, lr)
+
+            _print_eval_dict(eval_names, eval_results, prefix='(raw)')
 
             dict_smoother.update_weights(eval_results)
             smoothed_results = dict_smoother.get_weights()
 
             _print_eval_dict(eval_names, smoothed_results, prefix='(smooth)')
-             
+
             # logging.info('Regression Weights: Depth: %.2f, Location: %.2f, Corner: %.2f'%(regression_weights[0], \
             #              regression_weights[1], regression_weights[2]))
             # Reset timer
             start_time = time.time()
-        
+
+        # 每writer_iter次迭代
         if step % write_iter == 0:
             # write values to summary
             if FLAGS.summary:
-                summary_str = sess.run(tv_sess['summary_op'],
-                                       feed_dict=feed_dict)
+                summary_str = sess.run(tv_sess['summary_op'], feed_dict=feed_dict)
                 summary_writer.add_summary(summary_str, global_step=step)
-            summary.value.add(tag='training/total_loss',
-                              simple_value=float(loss_value))
-            summary.value.add(tag='training/learning_rate',
-                              simple_value=lr)
+
+            summary.value.add(tag='training/total_loss', simple_value=float(loss_value))
+            summary.value.add(tag='training/learning_rate', simple_value=lr)
             summary_writer.add_summary(summary, step)
+
             # Convert numpy types to simple types.
             eval_results = np.array(eval_results)
             eval_results = eval_results.tolist()
             eval_dict = zip(eval_names, eval_results)
-            _write_eval_dict_to_summary(eval_dict, 'Eval/raw',
-                                        summary_writer, step)
+            _write_eval_dict_to_summary(eval_dict, 'Eval/raw', summary_writer, step)
+
             eval_dict = zip(eval_names, smoothed_results)
-            _write_eval_dict_to_summary(eval_dict, 'Eval/smooth',
-                                        summary_writer, step)
+            _write_eval_dict_to_summary(eval_dict, 'Eval/smooth', summary_writer, step)
 
         # Do a evaluation and print the current state
-        if (step) % eval_iter == 0 \
-           or (step + 1) == hypes['solver']['max_steps']:
+        if step % eval_iter == 0 or step == hypes['solver']['max_steps']:
             # write checkpoint to disk
 
             logging.info('Running Evaluation Script.')
-      
-            eval_dict, images = modules['eval'].evaluate(
-                hypes, sess, tv_graph['image_pl'], tv_graph['calib_pl'], tv_graph['xy_scale_pl'],  tv_graph['inf_out'])
+
+            eval_dict, images = modules['eval'].evaluate(hypes, sess, tv_graph['image_pl'],
+                                                         tv_graph['calib_pl'],
+                                                         tv_graph['xy_scale_pl'],
+                                                         tv_graph['inf_out'])
 
             _write_images_to_summary(images, summary_writer, step)
             logging.info("Evaluation Finished. All results will be saved to:")
-            logging.info(hypes['dirs']['output_dir'])
+            logging.info(hypes['dirs']['image_dir'])
 
+            # The images of evaluated 3769
             if images is not None and len(images) > 0:
 
                 name = str(n % 10) + '_' + images[0][0]
                 image_file = os.path.join(hypes['dirs']['image_dir'], name)
-                scp.misc.imsave(image_file, images[0][1])
+                imageio.imsave(image_file, (images[0][1]).astype(np.uint8))
                 n = n + 1
 
             logging.info('Raw Results:')
-            utils.print_eval_dict(eval_dict, prefix='(raw)   ')
-            _write_eval_dict_to_summary(eval_dict, 'Evaluation/raw',
-                                        summary_writer, step)
+            utils.print_eval_dict(eval_dict, prefix='(raw)')
+            _write_eval_dict_to_summary(eval_dict, 'Evaluation/raw', summary_writer, step)
 
             logging.info('Smooth Results:')
             names, res = zip(*eval_dict)
             smoothed = py_smoother.update_weights(res)
             eval_dict = zip(names, smoothed)
             utils.print_eval_dict(eval_dict, prefix='(smooth)')
-            _write_eval_dict_to_summary(eval_dict, 'Evaluation/smoothed',
-                                        summary_writer, step)
+            _write_eval_dict_to_summary(eval_dict, 'Evaluation/smoothed', summary_writer, step)
 
             # Reset timer
             start_time = time.time()
 
         # Save a checkpoint periodically.
-     
-        if (step) % save_iter == 0 and step > 0 or \
-           (step + 1) == hypes['solver']['max_steps']:
+        if step % save_iter == 0 and step > 0 or step == hypes['solver']['max_steps']:
             # write checkpoint to disk
-            checkpoint_path = os.path.join(hypes['dirs']['output_dir'],
-                                           'model.ckpt')
+            checkpoint_path = os.path.join(hypes['dirs']['output_dir'], 'model.ckpt')
             tv_sess['saver'].save(sess, checkpoint_path, global_step=step)
             # Reset timer
             start_time = time.time()
-      
-        if step % image_iter == 0 and step > 0 or \
-           (step + 1) == hypes['solver']['max_steps']:
+
+        if step % image_iter == 0 and step > 0 or step == hypes['solver']['max_steps']:
             _write_images_to_disk(hypes, images, step)
+
+    logging.info('%s epoachs Training Finished!', hypes['logging']['epoachs'])
 
 
 def _print_training_status(hypes, step, loss_value, start_time, lr):
@@ -324,10 +325,16 @@ def _print_training_status(hypes, step, loss_value, start_time, lr):
     info_str = utils.cfg.step_str
 
     # Prepare printing
-    duration = (time.time() - start_time) / int(hypes['logging']['display_iter'])
+    # 每一个batch所花费的时间
+    if step == 0:
+        duration = time.time() - start_time
+    else:
+        duration = (time.time() - start_time) / int(hypes['logging']['display_iter'])
+    # 每秒图片数
     examples_per_sec = hypes['solver']['batch_size'] / duration
     sec_per_batch = float(duration)
     loss_value = np.sum(loss_value)
+    # 打印training信息
     logging.info(info_str.format(step=step,
                                  total_steps=hypes['solver']['max_steps'],
                                  loss_value=loss_value,
@@ -335,6 +342,17 @@ def _print_training_status(hypes, step, loss_value, start_time, lr):
                                  sec_per_batch=sec_per_batch,
                                  examples_per_sec=examples_per_sec)
                  )
+
+
+def count_param():       # 计算网络参数量
+    total_parameters = 0
+    for v in tf.trainable_variables():
+        shape = v.get_shape()
+        variable_parameters = 1
+        for dim in shape:
+            variable_parameters *= dim.value
+        total_parameters += variable_parameters
+    print('网络总参数量：', total_parameters)
 
 
 def do_training(hypes):
@@ -346,60 +364,78 @@ def do_training(hypes):
     the model to hypes['dirs']['output_dir'] every utils.cfg.step_eval
     steps.
 
-    Paramters
+    Parameters
     ---------
     hypes : dict
-        Hyperparameters
+        Hyper_parameters
     """
     # Get the sets of images and labels for training, validation, and
-    # test on MNIST.
+    # test on KITTI.
 
+    # 动态引入模块
     modules = utils.load_modules_from_hypes(hypes)
 
     # Tell TensorFlow that the model will be built into the default Graph.
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
 
         # build the graph based on the loaded modules
         with tf.name_scope("Queues"):
+            # .create_queues()是kitti_input.py中函数
             queue = modules['input'].create_queues(hypes, 'train')
-        
-        regression_weights = tf.placeholder(dtype=tf.float32, shape=(3,))
+
+        regression_weights = tf.compat.v1.placeholder(dtype=tf.float32, shape=(3,))
         hypes['solver']['regression_weights'] = regression_weights
 
         tv_graph = core.build_training_graph(hypes, queue, modules)
 
         # prepaire the tv session
+        # 保存了training 的summary_graph
+        # tensorversion start 队列填充已启动
         tv_sess = core.start_tv_session(hypes)
 
         with tf.name_scope('Validation'):
+            # 当前环境的作用域可以通过函数tf.get_variable_scope()获取，并且reuse标志可以通过调用reuse_variables()设置为True
+            # 当tf.get_variable_scope().reuse == True，调用该函数会重用已经创建的变量
             tf.get_variable_scope().reuse_variables()
             image_pl = tf.placeholder(tf.float32)
             calib = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 3, 4])
             xy_scale = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 2])
+
+            # 在axis=0上增加一个维度[1,image_pl]
             image = tf.expand_dims(image_pl, 0)
             image.set_shape([1, 384, 1248, 3])
-            inf_out = core.build_inference_graph(hypes, modules,
-                                                 image, calib, xy_scale)
+            inf_out = core.build_inference_graph(hypes, modules, image, calib, xy_scale)
+
             tv_graph['image_pl'] = image_pl
             tv_graph['inf_out'] = inf_out
             tv_graph['calib_pl'] = calib
             tv_graph['xy_scale_pl'] = xy_scale
 
+        # Returns a list of values in the collection with the given name.
         all_variables = tf.get_collection_ref(tf.GraphKeys.GLOBAL_VARIABLES)
+        # print(all_variables)
+        # 全部变量初始化
         sess.run(tf.variables_initializer(all_variables))
-        var_list = [var for var in all_variables if "beta" not in var.name and 'Adam' not in var.name]    
-  
+        var_list = [var for var in all_variables if "beta" not in var.name and 'Adam' not in var.name]
+        # 实例化一个 tf.train.Saver，var_list指定将保存和恢复的变量。它可以作为一个dict或一个列表传递
         saver = tf.train.Saver(var_list=var_list)
+
+        # 计算网络参数量
+        count_param()
+        # 用saver.restore()方法重载模型的参数,装载预训练的变量，主要装载的是3D部分的参数
         saver.restore(sess, hypes['pretrained'])
-     
+
         # Start the data load
+        # 开启新线程装载数据
         modules['input'].start_enqueuing_threads(hypes, queue, 'train', sess)
 
         # And then after everything is built, start the training loop.
         run_training(hypes, modules, tv_graph, tv_sess)
 
         # stopping input Threads
+        # 协调器coord发出所有线程终止信号
         tv_sess['coord'].request_stop()
+        # 把开启的线程加入主线程，等待threads结束
         tv_sess['coord'].join(tv_sess['threads'])
 
 
@@ -462,7 +498,9 @@ def continue_training(logdir):
         run_training(hypes, modules, tv_graph, tv_sess, cur_step)
 
         # stopping input Threads
+        # 协调器coord发出所有线程终止信号
         tv_sess['coord'].request_stop()
+        # 把开启的线程加入主线程，等待threads结束
         tv_sess['coord'].join(tv_sess['threads'])
 
 

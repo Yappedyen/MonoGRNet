@@ -5,14 +5,15 @@ import pickle
 import numpy as np
 import tensorflow as tf
 import sys
+
 # defaultencoding = 'utf-8'
 # if sys.getdefaultencoding() != defaultencoding:
 #     reload(sys)
 #     sys.setdefaultencoding(defaultencoding)
 
-#import sys
-#reload(sys)
-#sys.setdefaultencoding('utf-8')
+# import sys
+# reload(sys)
+# sys.setdefaultencoding('utf-8')
 
 VGG_MEAN = [103.939, 116.779, 123.68]
 
@@ -34,13 +35,14 @@ class FCN8VGG:
         # read binary file
         with open(vgg16_npy_path, 'rb') as file:
             self.data_dict = pickle.load(file, encoding='latin1')  # encoding='latin1'
+            file.close()
         self.wd = 1e-5
         print("pkl file loaded")
 
-    def build(self, rgb, train=False, num_classes=20, random_init_fc8=False,
-              debug=False):
+    def build(self, rgb, train=False, num_classes=20, random_init_fc8=False, debug=False):
         """
         Build the VGG model using loaded weights
+
         Parameters
         ----------
         rgb: image batch tensor
@@ -60,11 +62,18 @@ class FCN8VGG:
         self.train = train
         # 命名空间Processing
         with tf.name_scope('Processing'):
-
+            # red:Tensor(shape=(batch_size,384,1248,1))
+            # green:Tensor(shape=(batch_size,384,1248,1))
+            # blue:Tensor(shape=(batch_size,384,1248,1))
+            # split()切割tensor,tf.split(value,num_or_size_splits,axis=0) value是要切的Tensor，num_or_size_splits切成小张量数量
+            # axis代表切割哪个维度
+            # 在第三个维度上把rgb切割成3个tensor,分别为r,g,b
             red, green, blue = tf.split(rgb, 3, 3)
             # assert red.get_shape().as_list()[1:] == [224, 224, 1]
             # assert green.get_shape().as_list()[1:] == [224, 224, 1]
             # assert blue.get_shape().as_list()[1:] == [224, 224, 1]
+            # 拼接tensor
+            # tensor(shape=(batch_size,384,1248,3))
             bgr = tf.concat([
                 blue - VGG_MEAN[0],
                 green - VGG_MEAN[1],
@@ -72,37 +81,61 @@ class FCN8VGG:
             ], 3)
 
             if debug:
-                bgr = tf.Print(bgr, [tf.shape(bgr)],
+                bgr = tf.print(bgr, [tf.shape(bgr)],
                                message='Shape of input image: ',
                                summarize=4, first_n=1)
-
+        # conv1_1/filter (3,3,3,64)
         self.conv1_1 = self._conv_layer(bgr, "conv1_1")
+        # conv1_2/filter (3,3,64,64)
         self.conv1_2 = self._conv_layer(self.conv1_1, "conv1_2")
+        # pool1 (batch_size,192,624,64)
         self.pool1 = self._max_pool(self.conv1_2, 'pool1', debug)
-
+        # conv2_1/filter (3,3,64,128)
         self.conv2_1 = self._conv_layer(self.pool1, "conv2_1")
+        # conv2_2/filter (3,3,128,128)
         self.conv2_2 = self._conv_layer(self.conv2_1, "conv2_2")
+        # pool2 (batch_size,96,312,128)
         self.pool2 = self._max_pool(self.conv2_2, 'pool2', debug)
-
+        # conv3_1/filter (3,3,128,256)
         self.conv3_1 = self._conv_layer(self.pool2, "conv3_1")
+        # conv3_2/filter (3,3,256,256)
         self.conv3_2 = self._conv_layer(self.conv3_1, "conv3_2")
+        # conv3_3/filter (3,3,256,256)
         self.conv3_3 = self._conv_layer(self.conv3_2, "conv3_3")
+        # pool3 (batch_size,48,156,256)
         self.pool3 = self._max_pool(self.conv3_3, 'pool3', debug)
-
+        # conv4_1/filter (3,3,256,512)
         self.conv4_1 = self._conv_layer(self.pool3, "conv4_1")
+        # conv4_2/filter (3,3,512,512)
         self.conv4_2 = self._conv_layer(self.conv4_1, "conv4_2")
+        # conv4_3/filter (3,3,512,512)
         self.conv4_3 = self._conv_layer(self.conv4_2, "conv4_3")
+        # pool4 (batch_size,24,78,512)
         self.pool4 = self._max_pool(self.conv4_3, 'pool4', debug)
-        
-        self.conv4_depth, self.conv4_location, self.conv4_corner = self._image_encoder(self.conv4_3, 128, (6, 12, 18), 'conv4_encoder')
 
+        # conv4_3 feature_map(batch_size,48,156,512) 经3次pool所得
+        # 从conv4_3的特征图上做多任务 depth、location、corner
+        # conv4_depth(batch_size,48,156,128)
+        # conv4_location(batch_size,48,156,128)
+        # conv4_corners(batch_size,48,156,128)
+        self.conv4_depth, self.conv4_location, self.conv4_corner = self._image_encoder(
+            self.conv4_3, 128, (6, 12, 18), 'conv4_encoder')
+
+        # conv5_1/filter (3,3,512,512)
         self.conv5_1 = self._conv_layer(self.pool4, "conv5_1")
+        # conv5_2/filter (3,3,512,512)
         self.conv5_2 = self._conv_layer(self.conv5_1, "conv5_2")
+        # conv5_3/filter (3,3,512,512)
         self.conv5_3 = self._conv_layer(self.conv5_2, "conv5_3")
+        # pool5 (batch_size,12,39,512)
         self.pool5 = self._max_pool(self.conv5_3, 'pool5', debug)
-       
-        self.pool5_depth, self.pool5_location, self.pool5_corner = self._image_encoder(self.pool5, 128, (2, 4, 8), 'pool5_encoder')
-    
+        # 从pool5 的特征图上做多任务 depth、location、corner
+        # pool5_depth(batch_size,12,39,128)
+        # pool5_location(batch_size,12,39,128)
+        # pool5_corners(batch_size,12,39,128)
+        self.pool5_depth, self.pool5_location, self.pool5_corner = self._image_encoder(
+            self.pool5, 128, (2, 4, 8), 'pool5_encoder')
+
         self.fc8 = None
 
     def _inverted_residual(self, bottom, num_blocks, out_channels, name, branch):
@@ -117,52 +150,87 @@ class FCN8VGG:
         return outputs
 
     def _image_encoder(self, bottom, out_channels, rates, name):
-        batch, height, width, in_channels = bottom.get_shape().as_list()       
-
+        # conv4_3 bottom:(batch_size,48,156,512)
+        # batch:batch_size height:48 weight:156 in_channels=512
+        # pool5 (batch_size,12,39,512)
+        batch, height, width, in_channels = bottom.get_shape().as_list()
+        # depth_branch
+        # conv4_encoder_full_neck/filter (3,3,512,256) full_neck = (batch_size,48,156,256)
+        # pool5_encoder_full_neck/filter (3,3,512,256) full_neck = (batch_size,12,39,256)
         full_neck = self._conv_layer_new(bottom, name + '_full_neck', 3, 1, (in_channels, 256), 'depth')
+        # conv4_encoder_full/filter (3,3,256,128) full = (batch_size,48,156,128)
+        # pool5_encoder_full/filter (3,3,256,128) full = (batch_size,12,39,128)
         full = self._conv_layer_new(full_neck, name + '_full', 3, 1, (256, 128), 'depth')
+        # 按照不同的步长做卷积得到atrous conv4_3_step(6,12,18)  pool5_step (2,4,8)
+        # conv4_encoder_atrous_1/filter (3,3,256,128) atrous_1=(batch_size,48,156,128)
+        # pool5_encoder_atrous_1/filter (3,3,256,128) atrous_1=(batch_size,12,39,128)
         atrous_1 = self._atrous_conv_layer_new(full_neck, name + '_atrous_1', 3, rates[0], (256, 128), 'depth')
+        # conv4_encoder_atrous_2/filter (3,3,256,128) atrous_2=(batch_size,48,156,128)
+        # pool5_encoder_atrous_2/filter (3,3,256,128) atrous_2=(batch_size,12,39,128)
         atrous_2 = self._atrous_conv_layer_new(full_neck, name + '_atrous_2', 3, rates[1], (256, 128), 'depth')
+        # conv4_encoder_atrous_3/filter (3,3,256,128) atrous_3=(batch_size,48,156,128)
+        # pool5_encoder_atrous_3/filter (3,3,256,128) atrous_3=(batch_size,12,39,128)
         atrous_3 = self._atrous_conv_layer_new(full_neck, name + '_atrous_3', 3, rates[2], (256, 128), 'depth')
+        # 拼接tensor，full、atrous_1、atrous_2、atrous_3
+        # conv4_3 neck (batch_size,48,156,512)
+        # pool5 neck (batch_size,12,39,512)
         neck = tf.concat([full, atrous_1, atrous_2, atrous_3], axis=3)
+        # conv4_depth_head (batch_size,48,156,128)
+        # pool5_depth_head (batch_size,12,39,128)
         depth_head = self._conv_layer_new(neck, name + '_conv_neck', 1, 1, (512, out_channels), 'depth')
-
+        # location_branch
+        # conv4_location_neck (batch_size,48,156,256)
+        # pool5_location_neck (batch_size,12,39,256)
         location_neck = self._conv_layer_new(bottom, name + '_location_neck', 3, 1, (in_channels, 256), 'location')
-        location_head = self._conv_layer_new(location_neck, name + '_location_head', 3, 1, (256, out_channels), 'location')
-
-        corners_neck = self._conv_layer_new(bottom, name + '_corners_neck', 3, 1, (in_channels, 256), 'location')
+        # conv4_location_head (batch_size,48,156,128)
+        # pool5_location_head (batch_size,12,39,128)
+        location_head = self._conv_layer_new(location_neck, name + '_location_head', 3, 1, (256, out_channels),
+                                             'location')
+        # corners_branch
+        # conv4_corners_neck (batch_size,48,156,256)
+        # pool5_corners_neck (batch_size,12,39,256)
+        corners_neck = self._conv_layer_new(bottom, name + '_corners_neck', 3, 1, (in_channels, 256), 'corners')
+        # conv4_corners_head (batch_size,48,156,128)
+        # pool5_corners_head (batch_size,12,39,128)
         corners_head = self._conv_layer_new(corners_neck, name + '_corners_head', 3, 1, (256, out_channels), 'corners')
         return depth_head, location_head, corners_head
 
     def _max_pool(self, bottom, name, debug):
-        pool = tf.nn.max_pool2d(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-                              padding='SAME', name=name)
+        # ksize 池化窗口大小
+        pool = tf.nn.max_pool2d(bottom, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name=name)
 
         if debug:
-            pool = tf.Print(pool, [tf.shape(pool)],
+            pool = tf.print(pool, [tf.shape(pool)],
                             message='Shape of %s' % name,
                             summarize=4, first_n=1)
         return pool
 
     def _conv_layer(self, bottom, name, channels=None, new_weights=False, use_relu=True):
-        shape_filt = (3, 3, channels[0], channels[1]) if not channels == None else None
-        shape_bias = channels[1] if not channels == None else None
-        with tf.variable_scope(name) as scope:
+        # shape_filt = (3, 3, channels[0], channels[1]) if not channels == None else None
+        shape_filt = None if channels is None else (3, 3, channels[0], channels[1])
+        shape_bias = None if channels is None else channels[1]
+        with tf.compat.v1.variable_scope(name) as scope:
+            # 卷积核 conv1_1/filter (3,3,3,64)
             filt = self.get_conv_filter(name, 'backbone', shape_filt, new_weights)
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
+            # 每一个conv加上一个bias,有64个filter,每一个一个bias
             conv_biases = self.get_bias(name, None, 'backbone', shape_bias, new_weights)
             bias = tf.nn.bias_add(conv, conv_biases)
+            # 激活函数relu
             relu = tf.nn.relu(bias) if use_relu else bias
             # Add summary to Tensorboard
             _activation_summary(relu)
             return relu
 
     def _conv_layer_new(self, bottom, name, ksize, stride, channels, branch, use_relu=True, use_norm=True):
+        # shape_filter (3,3,512,256) # shape_filter (3,3,256,128)
         shape_filt = (ksize, ksize, channels[0], channels[1])
+        # shape_bias = 256  # shape_bias = 128
         shape_bias = channels[1]
-        with tf.variable_scope(name) as scope:
-            filt = self.get_conv_filter(name, branch, shape_filt,True)
+        with tf.compat.v1.variable_scope(name) as scope:
+            filt = self.get_conv_filter(name, branch, shape_filt, True)
             conv = tf.nn.conv2d(bottom, filt, [1, stride, stride, 1], padding='SAME')
+            # conv (batch_size,48,156,256) # conv (batch_size,48,156,128)
             conv = self._group_norm(conv) if use_norm else conv
             conv_biases = self.get_bias(name, None, branch, shape_bias, True)
             bias = tf.nn.bias_add(conv, conv_biases)
@@ -185,7 +253,7 @@ class FCN8VGG:
     def _atrous_conv_layer_new(self, bottom, name, ksize, rate, channels, branch, use_relu=True, use_norm=True):
         shape_filt = (ksize, ksize, channels[0], channels[1])
         shape_bias = channels[1]
-        with tf.variable_scope(name) as scope:
+        with tf.compat.v1.variable_scope(name) as scope:
             filt = self.get_conv_filter(name, branch, shape_filt, True)
             conv = tf.nn.atrous_conv2d(bottom, filt, rate=rate, padding='SAME')
             conv = self._group_norm(conv) if use_norm else conv
@@ -195,21 +263,23 @@ class FCN8VGG:
             _activation_summary(relu)
             return relu
 
-    def _group_norm(self, x, G=16, eps=1e-5, scope='group_norm') :
-        with tf.variable_scope(scope) :
+    def _group_norm(self, x, G=16, eps=1e-5, scope='group_norm'):
+        with tf.compat.v1.variable_scope(scope):
             N, H, W, C = x.get_shape().as_list()
             G = min(G, C)
+            # x=(batch_size,48,156,16,16)
             x = tf.reshape(x, [N, H, W, G, C // G])
+            # 计算1，2，4维度上的均值和方差
             mean, var = tf.nn.moments(x, [1, 2, 4], keep_dims=True)
             x = (x - mean) / tf.sqrt(var + eps)
-            gamma = tf.get_variable('gamma', [1, 1, 1, C], initializer=tf.constant_initializer(1.0))
+            gamma = tf.compat.v1.get_variable('gamma', [1, 1, 1, C], initializer=tf.constant_initializer(1.0))
             x = tf.reshape(x, [N, H, W, C]) * gamma
-            tf.add_to_collection('trainable', gamma)
+            tf.compat.v1.add_to_collection('trainable', gamma)
             return x
 
     def _fc_layer(self, bottom, name, num_classes=None,
                   relu=True, debug=False):
-        with tf.variable_scope(name) as scope:
+        with tf.compat.v1.variable_scope(name) as scope:
             shape = bottom.get_shape().as_list()
 
             if name == 'fc6':
@@ -238,7 +308,7 @@ class FCN8VGG:
             return bias
 
     def _score_layer(self, bottom, name, num_classes):
-        with tf.variable_scope(name) as scope:
+        with tf.compat.v1.variable_scope(name) as scope:
             # get number of input channels
             in_features = bottom.get_shape()[3].value
             shape = [1, 1, in_features, num_classes]
@@ -268,7 +338,7 @@ class FCN8VGG:
                        num_classes, name, debug,
                        ksize=4, stride=2):
         strides = [1, stride, stride, 1]
-        with tf.variable_scope(name):
+        with tf.compat.v1.variable_scope(name):
             in_features = bottom.get_shape()[3].value
 
             if shape is None:
@@ -316,32 +386,30 @@ class FCN8VGG:
         for i in range(f_shape[2]):
             weights[:, :, i, i] = bilinear
 
-        init = tf.constant_initializer(value=weights,
-                                       dtype=tf.float32)
-        var = tf.get_variable(name="up_filter", initializer=init,
-                              shape=weights.shape)
+        init = tf.constant_initializer(value=weights, dtype=tf.float32)
+        var = tf.compat.v1.get_variable(name="up_filter", initializer=init, shape=weights.shape)
         return var
 
     def get_conv_filter(self, name, branch, shape=None, new_weights=False):
+        # 用预训练的参数的参数初始化backbone中的卷积核
         if name in self.data_dict:
-            init = tf.constant_initializer(value=self.data_dict[name][0],
-                                           dtype=tf.float32)
+            init = tf.constant_initializer(value=self.data_dict[name][0], dtype=tf.float32)
             shape = self.data_dict[name][0].shape
         else:
             init = tf.contrib.layers.xavier_initializer()
-            assert shape != None
+            assert shape is not None
         print('Layer name: %s' % name)
-        print('Layer shape: %s' % str(shape))
-        var = tf.get_variable(name="filter", initializer=init, shape=shape)
+        print('Layer filter shape: %s' % str(shape))
+        var = tf.compat.v1.get_variable(name="filter", initializer=init, shape=shape)
         if new_weights:
-            tf.add_to_collection('trainable', var)
-            tf.add_to_collection(branch, var)
-        weights_key = 'new_weights' if new_weights else tf.GraphKeys.REGULARIZATION_LOSSES
-        #if not tf.get_variable_scope().reuse:
+            tf.compat.v1.add_to_collection('trainable', var)
+            tf.compat.v1.add_to_collection(branch, var)
+        weights_key = 'new_weights' if new_weights else tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES
+        # if not tf.compat.v1.get_variable_scope().reuse:
+        # 利用L2范数来计算张量的误差值，但是没有开方并且只取L2范数的值的一半  l2_loss(t) = sum(t**2)/2
         weight_decay = tf.nn.l2_loss(var) * self.wd
-        tf.add_to_collection(weights_key,
-                             weight_decay)
-        tf.add_to_collection(branch + '_decay', weight_decay)
+        tf.compat.v1.add_to_collection(weights_key, weight_decay)
+        tf.compat.v1.add_to_collection(branch + '_decay', weight_decay)
         _variable_summaries(var)
         return var
 
@@ -349,15 +417,14 @@ class FCN8VGG:
         if name in self.data_dict:
             bias_wights = self.data_dict[name][1]
             shape = self.data_dict[name][1].shape
-            init = tf.constant_initializer(value=bias_wights,
-                                           dtype=tf.float32)
+            init = tf.constant_initializer(value=bias_wights, dtype=tf.float32)
         else:
             init = tf.contrib.layers.xavier_initializer()
-            assert shape!= None
-        var = tf.get_variable(name="biases", initializer=init, shape=shape)
+            assert shape is not None
+        var = tf.compat.v1.get_variable(name="biases", initializer=init, shape=shape)
         if new_weights:
-            tf.add_to_collection('trainable', var)
-            tf.add_to_collection(branch, var)
+            tf.compat.v1.add_to_collection('trainable', var)
+            tf.compat.v1.add_to_collection(branch, var)
         _variable_summaries(var)
         return var
 
@@ -365,11 +432,11 @@ class FCN8VGG:
         init = tf.constant_initializer(value=self.data_dict[name][0],
                                        dtype=tf.float32)
         shape = self.data_dict[name][0].shape
-        var = tf.get_variable(name="weights", initializer=init, shape=shape)
-        if not tf.get_variable_scope().reuse:
+        var = tf.compat.v1.get_variable(name="weights", initializer=init, shape=shape)
+        if not tf.compat.v1.get_variable_scope().reuse:
             weight_decay = tf.multiply(tf.nn.l2_loss(var), self.wd,
                                        name='weight_loss')
-            tf.add_to_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+            tf.compat.v1.add_to_collection(tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES,
                                  weight_decay)
         _variable_summaries(var)
         return var
@@ -434,7 +501,7 @@ class FCN8VGG:
 
         Args:
 
-          name: name of the variable
+          self: name of the variable
           shape: list of ints
           stddev: standard deviation of a truncated Gaussian
           wd: add L2Loss weight decay multiplied by this float. If None, weight
@@ -445,30 +512,29 @@ class FCN8VGG:
         """
 
         initializer = tf.truncated_normal_initializer(stddev=stddev)
-        var = tf.get_variable('weights', shape=shape,
-                              initializer=initializer)
+        var = tf.compat.v1.get_variable('weights', shape=shape, initializer=initializer)
 
-        collection_name = tf.GraphKeys.REGULARIZATION_LOSSES
-        if wd and (not tf.get_variable_scope().reuse):
+        collection_name = tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES
+        if wd and (not tf.compat.v1.get_variable_scope().reuse):
             weight_decay = tf.multiply(
                 tf.nn.l2_loss(var), wd, name='weight_loss')
-            tf.add_to_collection(collection_name, weight_decay)
+            tf.compat.v1.add_to_collection(collection_name, weight_decay)
         _variable_summaries(var)
         return var
 
     def _add_wd_and_summary(self, var, wd, collection_name=None):
         if collection_name is None:
-            collection_name = tf.GraphKeys.REGULARIZATION_LOSSES
-        if wd and (not tf.get_variable_scope().reuse):
+            collection_name = tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES
+        if wd and (not tf.compat.v1.get_variable_scope().reuse):
             weight_decay = tf.multiply(
                 tf.nn.l2_loss(var), wd, name='weight_loss')
-            tf.add_to_collection(collection_name, weight_decay)
+            tf.compat.v1.add_to_collection(collection_name, weight_decay)
         _variable_summaries(var)
         return var
 
     def _bias_variable(self, shape, constant=0.0):
         initializer = tf.constant_initializer(constant)
-        var = tf.get_variable(name='biases', shape=shape,
+        var = tf.compat.v1.get_variable(name='biases', shape=shape,
                               initializer=initializer)
         _variable_summaries(var)
         return var
@@ -483,7 +549,7 @@ class FCN8VGG:
                                             num_new=num_classes)
         init = tf.constant_initializer(value=weights,
                                        dtype=tf.float32)
-        var = tf.get_variable(name="weights", initializer=init, shape=shape)
+        var = tf.compat.v1.get_variable(name="weights", initializer=init, shape=shape)
         return var
 
 
@@ -502,21 +568,24 @@ def _activation_summary(x):
     # session. This helps the clarity of presentation on tensorboard.
     tensor_name = x.op.name
     # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-    tf.summary.histogram(tensor_name + '/activations', x)
-    tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
+    tf.compat.v1.summary.histogram(tensor_name + '/activations', x)
+    tf.compat.v1.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
 
 def _variable_summaries(var):
     """Attach a lot of summaries to a Tensor."""
-    if not tf.get_variable_scope().reuse:
+    if not tf.compat.v1.get_variable_scope().reuse:
         name = var.op.name
         logging.info("Creating Summary for: %s" % name)
         with tf.name_scope('summaries'):
+            # 计算tensor均值
             mean = tf.reduce_mean(var)
-            tf.summary.scalar(name + '/mean', mean)
+            # 用来显示标量信息
+            tf.compat.v1.summary.scalar(name + '/mean', mean)
             with tf.name_scope('stddev'):
                 stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
-            tf.summary.scalar(name + '/sttdev', stddev)
-            tf.summary.scalar(name + '/max', tf.reduce_max(var))
-            tf.summary.scalar(name + '/min', tf.reduce_min(var))
-            tf.summary.histogram(name, var)
+            tf.compat.v1.summary.scalar(name + '/sttdev', stddev)
+            tf.compat.v1.summary.scalar(name + '/max', tf.reduce_max(var))
+            tf.compat.v1.summary.scalar(name + '/min', tf.reduce_min(var))
+            # 用来显示直方图信息
+            tf.compat.v1.summary.histogram(name, var)

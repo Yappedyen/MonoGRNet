@@ -58,10 +58,11 @@ def _draw_rect(draw, rect, color):
                   (right, bottom), (right, top),
                   (left, top))
     draw.line(rect_cords, fill=color, width=2)
-    draw.text((left, top), '%.1f  %.1f  %.1f'%(rect.x_3d, rect.y_3d, rect.z_3d), 'red')
+    draw.text((left, top), '%.1f  %.1f  %.1f' % (rect.x_3d, rect.y_3d, rect.z_3d), 'red')
 
 
-def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25):
+def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=False, rnn_len=1,
+                       min_conf=0.1, show_removed=True, tau=0.25):
     num_cells = H["grid_height"] * H["grid_width"]
     boxes_r = np.reshape(boxes, (-1,
                                  H["grid_height"],
@@ -99,7 +100,7 @@ def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=F
                 all_rects[y][x].append(Rect(abs_cx,abs_cy,w,h,conf,depth,location[0],location[1],location[2], -1, -1, -1, -1))
 
     all_rects_r = [r for row in all_rects for cell in row for r in cell]
-   
+   # NMS
     if use_stitching:
         from stitch_wrapper import stitch_rects
         acc_rects = stitch_rects(all_rects, tau)
@@ -107,8 +108,9 @@ def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=F
         acc_rects = all_rects_r
 
 
-def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25,
-    color_removed=(0, 0, 255), color_acc=(0, 0, 255)):
+def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners, use_stitching=False,
+                   rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25, color_removed=(0, 0, 255),
+                   color_acc=(0, 0, 255)):
     image = np.copy(orig_image[0])
     num_cells = H["grid_height"] * H["grid_width"]
     boxes_r = np.reshape(boxes, (-1,
@@ -157,7 +159,8 @@ def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners
                 location = locations_r[0, y, x, n, :]
                 dims_alpha = dimensions_yaw[0, y, x, n, :]
                 conf = np.max(confidences_r[0, y, x, n, 1:]) 
-                all_rects[y][x].append(Rect(abs_cx,abs_cy,w,h,conf,depth,location[0],location[1],location[2],dims_alpha[0],dims_alpha[1],dims_alpha[2],dims_alpha[3]))
+                all_rects[y][x].append(Rect(abs_cx, abs_cy, w, h, conf, depth, location[0], location[1], location[2],
+                                            dims_alpha[0], dims_alpha[1], dims_alpha[2], dims_alpha[3]))
 
     all_rects_r = [r for row in all_rects for cell in row for r in cell] 
     if use_stitching:
@@ -197,7 +200,8 @@ def add_rectangles(H, orig_image, confidences, boxes, depths, locations, corners
         r.width_3d = rect.width_3d
         r.length_3d = rect.length_3d
         r.alpha = rect.alpha
-       
+
+        # transform the rotation in local coordinates back to the camera coordinates
         view_angle = np.arctan2(rect.z_3d, rect.x_3d)
         r.alpha += np.pi * 0.5 - view_angle
 
@@ -302,8 +306,8 @@ def bilinear_select(H, pred_boxes, early_feat, early_feat_channels, w_offset, h_
     grid_size = H['grid_width'] * H['grid_height']
     outer_size = grid_size * H['batch_size']
 
-    fine_stride = 8. # pixels per 60x80 grid cell in 480x640 image
-    coarse_stride = H['region_size'] # pixels per 15x20 grid cell in 480x640 image
+    fine_stride = 8.  # pixels per 60x80 grid cell in 480x640 image
+    coarse_stride = H['region_size']  # pixels per 15x20 grid cell in 480x640 image
     batch_ids = []
     x_offsets = []
     y_offsets = []
@@ -323,13 +327,9 @@ def bilinear_select(H, pred_boxes, early_feat, early_feat_channels, w_offset, h_
     scale_factor = coarse_stride / fine_stride # scale difference between 15x20 and 60x80 features
 
     pred_x_center = (pred_boxes_r[:, 0:1] + w_offset * pred_boxes_r[:, 2:3] + x_offsets) / fine_stride
-    pred_x_center_clip = tf.clip_by_value(pred_x_center,
-                                     0,
-                                     scale_factor * H['grid_width'] - 1)
+    pred_x_center_clip = tf.clip_by_value(pred_x_center, 0, scale_factor * H['grid_width'] - 1)
     pred_y_center = (pred_boxes_r[:, 1:2] + h_offset * pred_boxes_r[:, 3:4] + y_offsets) / fine_stride
-    pred_y_center_clip = tf.clip_by_value(pred_y_center,
-                                          0,
-                                          scale_factor * H['grid_height'] - 1)
+    pred_y_center_clip = tf.clip_by_value(pred_y_center, 0, scale_factor * H['grid_height'] - 1)
 
     interp_indices = tf.concat(axis=1, values=[tf.to_float(batch_ids), pred_y_center_clip, pred_x_center_clip])
     return interp_indices

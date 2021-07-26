@@ -525,19 +525,19 @@ class Annotation(object):
                         rect.printContent()
 
         def writeIDL(self, file):
-                if (self.frameNr == -1):
+                if self.frameNr == -1:
                         file.write("\""+os.path.join(self.imagePath, self.imageName)+"\"")
                 else:
                         file.write("\""+os.path.join(self.imagePath, self.imageName)+"@%d\"" % self.frameNr)
 
-                if (len(self.rects)>0):
+                if len(self.rects)>0:
                         file.write(":")
                 i=0
                 for rect in self.rects:
                         rect.writeIDL(file)
                         if (i+1<len(self.rects)):
                                 file.write(",")
-                        i+=1
+                        i += 1
 
         def addToXML(self, node, doc): # no frame# yet
                 annotation_el = doc.createElement("annotation")
@@ -547,7 +547,7 @@ class Annotation(object):
                 name_el.appendChild(name_val)
                 img_el.appendChild(name_el)
 
-                if(self.frameNr != -1):
+                if self.frameNr != -1:
                         frame_el = doc.createElement("frameNr")
                         frame_val = doc.createTextNode(str(self.frameNr))
                         frame_el.appendChild(frame_val)
@@ -655,10 +655,10 @@ def parseXML(filename):
                 lines = bfile.read()
                 bfile.close()
 
-        #--- parse xml ---#
+        # --- parse xml ---#
         doc = xml.dom.minidom.parseString(lines)
 
-        #--- get tags ---#
+        # --- get tags ---#
         for annotation in doc.getElementsByTagName("annotation"):
                 anno = Annotation()
                 for image in annotation.getElementsByTagName("image"):
@@ -699,12 +699,12 @@ def parseXML(filename):
                         for articulation in annoRect.getElementsByTagName("articulation"):
                                 for id in articulation.getElementsByTagName("id"):
                                         rect.articulations.append(int(id.firstChild.data))
-                                #print "Articulations: ", rect.articulations
+                                # print "Articulations: ", rect.articulations
 
                         for viewpoint in annoRect.getElementsByTagName("viewpoint"):
                                 for id in viewpoint.getElementsByTagName("id"):
                                         rect.viewpoints.append(int(id.firstChild.data))
-                                        #print "Viewpoints: ", rect.viewpoints
+                                        # print "Viewpoints: ", rect.viewpoints
 
                         for d in annoRect.getElementsByTagName("D3"):
                                 for id in d.getElementsByTagName("id"):
@@ -713,7 +713,7 @@ def parseXML(filename):
                         for silhouette in annoRect.getElementsByTagName("silhouette"):
                                 for id in silhouette.getElementsByTagName("id"):
                                         rect.silhouetteID = int(id.firstChild.data)
-                                #print "SilhouetteID: ", rect.silhouetteID
+                                # print "SilhouetteID: ", rect.silhouetteID
 
                         for annoPoints in annoRect.getElementsByTagName("annopoints"):
                                 for annoPoint in annoPoints.getElementsByTagName("point"):
@@ -740,7 +740,7 @@ def parseXML(filename):
 
 
 def parse(filename, abs_path=False):
-        #print "Parsing: ", filename
+        # print "Parsing: ", filename
         name, ext = os.path.splitext(filename)
 
         if (ext == ".gz" or ext == ".bz2"):
@@ -811,7 +811,7 @@ def parseIDL(filename):
                 else:
                         anno.frameNr = -1
 
-                ### get rect list
+                # get rect list
                 # we split by ','. there are 3 commas for each rect and 1 comma seperating the rects
                 rectSegs=[]
                 if (posImageEnd!=-1 and posImageEnd+4<lineLen):
@@ -827,7 +827,7 @@ def parseIDL(filename):
                                         rectSegs.append(rectSeg)
                                         #print rectSegs
 
-                        ## parse rect segments
+                        # parse rect segments
                         for rectSeg in rectSegs:
                                 # print "RectSeg: ", rectSeg
                                 rect = AnnoRect()
@@ -861,7 +861,7 @@ def parseIDL(filename):
 
 
 def save(filename, annotations):
-        print ("saving: ", filename)
+        print("saving: ", filename)
 
         name, ext = os.path.splitext(filename)
 

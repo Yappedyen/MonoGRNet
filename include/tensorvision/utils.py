@@ -1,16 +1,17 @@
 """Utility functions for TensorVision."""
 
-import imp
+import importlib
+import importlib.machinery
 import json
 import logging
 import os
-import pdb
+# import pdb
 
 from datetime import datetime
 import matplotlib.cm as cm
 
-
 # https://github.com/tensorflow/tensorflow/issues/2034#issuecomment-220820070
+
 import numpy as np
 import sys
 import struct
@@ -25,7 +26,6 @@ import tensorflow as tf
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-
 flags.DEFINE_string('gpus', None,
                     ('Which gpus to use. For multiple GPUs use comma seperated'
                      'ids. [e.g. --gpus 0,3]'))
@@ -39,20 +39,18 @@ def download(url, dest_directory):
     logging.info("Download DIR: {}".format(dest_directory))
 
     def _progress(count, block_size, total_size):
-                prog = float(count * block_size) / float(total_size) * 100.0
-                sys.stdout.write('\r>> Downloading %s %.1f%%' %
-                                 (filename, prog))
-                sys.stdout.flush()
+        prog = float(count * block_size) / float(total_size) * 100.0
+        sys.stdout.write('\r>> Downloading %s %.1f%%' % (filename, prog))
+        sys.stdout.flush()
 
-    filepath, _ = urllib.request.urlretrieve(url, filepath,
-                                             reporthook=_progress)
+    filepath, _ = urllib.request.urlretrieve(url, filepath, reporthook=_progress)
     print()
     return filepath
 
 
 def print_eval_dict(eval_dict, prefix=''):
     for name, value in eval_dict:
-            logging.info('    %s %s : % 0.04f ' % (name, prefix, value))
+        logging.info(' %s %s : % 0.04f ' % (name, prefix, value))
     return
 
 
@@ -63,7 +61,7 @@ def set_dirs(hypes, hypes_fname):
     Parameters
     ----------
     hypes : dict
-        Hyperparameters
+        Hyper_parameters
     hypes_fname : str
         Path to hypes_file
     """
@@ -110,8 +108,8 @@ def set_dirs(hypes, hypes_fname):
 
 def set_gpus_to_use():
     """Set the gpus to use."""
-   
-    gpus = '0' if FLAGS.gpus == None else FLAGS.gpus
+
+    gpus = '0' if FLAGS.gpus is None else FLAGS.gpus
     logging.info("GPUs are set to: %s", gpus)
     os.environ['CUDA_VISIBLE_DEVICES'] = gpus
 
@@ -125,35 +123,37 @@ def load_modules_from_hypes(hypes, postfix=""):
     Parameters
     ----------
     hypes : dict
-        Hyperparameters
+        Hyper_parameters
+
+    postfix:
 
     Returns
     -------
     hypes, data_input, arch, objective, solver
     """
- 
+
     modules = {}
     base_path = hypes['dirs']['base_path']
 
     # _add_paths_to_sys(hypes)
     f = os.path.join(base_path, hypes['model']['input_file'])
-    data_input = imp.load_source("input_%s" % postfix, f)
+    data_input = importlib.machinery.SourceFileLoader("input_%s" % postfix, f).load_module()
     modules['input'] = data_input
 
     f = os.path.join(base_path, hypes['model']['architecture_file'])
-    arch = imp.load_source("arch_%s" % postfix, f)
+    arch = importlib.machinery.SourceFileLoader("arch_%s" % postfix, f).load_module()
     modules['arch'] = arch
 
     f = os.path.join(base_path, hypes['model']['objective_file'])
-    objective = imp.load_source("objective_%s" % postfix, f)
+    objective = importlib.machinery.SourceFileLoader("objective_%s" % postfix, f).load_module()
     modules['objective'] = objective
 
     f = os.path.join(base_path, hypes['model']['optimizer_file'])
-    solver = imp.load_source("solver_%s" % postfix, f)
+    solver = importlib.machinery.SourceFileLoader("solver_%s" % postfix, f).load_module()
     modules['solver'] = solver
 
     f = os.path.join(base_path, hypes['model']['evaluator_file'])
-    eva = imp.load_source("evaluator_%s" % postfix, f)
+    eva = importlib.machinery.SourceFileLoader("evaluator_%s" % postfix, f).load_module()
     modules['eval'] = eva
 
     return modules
@@ -168,13 +168,13 @@ def _add_paths_to_sys(hypes):
     Parameters
     ----------
     hypes : dict
-        Hyperparameters
+        Hyper_parameters
     """
     base_path = hypes['dirs']['base_path']
     if 'path' in hypes:
-            for path in hypes['path']:
-                path = os.path.realpath(os.path.join(base_path, path))
-                sys.path.insert(1, path)
+        for path in hypes['path']:
+            path = os.path.realpath(os.path.join(base_path, path))
+            sys.path.insert(1, path)
     return
 
 
@@ -188,6 +188,9 @@ def load_modules_from_logdir(logdir, dirname="model_files", postfix=""):
     ----------
     logdir : string
         Path to logdir
+    dirname: string
+        model_files
+    postfix:
 
     Returns
     -------
@@ -196,22 +199,24 @@ def load_modules_from_logdir(logdir, dirname="model_files", postfix=""):
     model_dir = os.path.join(logdir, dirname)
     f = os.path.join(model_dir, "data_input.py")
     # TODO: create warning if file f does not exists
-    data_input = imp.load_source("input_%s" % postfix, f)
+    data_input = importlib.machinery.SourceFileLoader("input_%s" % postfix, f).load_module()
     f = os.path.join(model_dir, "architecture.py")
-    arch = imp.load_source("arch_%s" % postfix, f)
+    arch = importlib.machinery.SourceFileLoader("arch_%s" % postfix, f)
     f = os.path.join(model_dir, "objective.py")
-    objective = imp.load_source("objective_%s" % postfix, f)
+    objective = importlib.machinery.SourceFileLoader("objective_%s" % postfix, f).load_module()
     f = os.path.join(model_dir, "solver.py")
-    solver = imp.load_source("solver_%s" % postfix, f)
+    solver = importlib.machinery.SourceFileLoader("solver_%s" % postfix, f).load_module()
 
     f = os.path.join(model_dir, "eval.py")
-    eva = imp.load_source("evaluator_%s" % postfix, f)
-    modules = {}
-    modules['input'] = data_input
-    modules['arch'] = arch
-    modules['objective'] = objective
-    modules['solver'] = solver
-    modules['eval'] = eva
+    eva = importlib.machinery.SourceFileLoader("evaluator_%s" % postfix, f).load_module()
+
+    modules = {
+        'input': data_input,
+        'arch': arch,
+        'objective': objective,
+        'solver': solver,
+        'eval': eva
+    }
 
     return modules
 
@@ -226,6 +231,10 @@ def load_hypes_from_logdir(logdir, subdir="model_files", base_path=None):
     ----------
     logdir : string
         Path to logdir
+    subdir:
+        model_files
+    base_path:
+        path
 
     Returns
     -------
@@ -298,20 +307,21 @@ def _set_cfg_value(cfg_name, default, cfg):
     Parameters
     ----------
     cfg_name : str
-    env_name : str
     default : str
     cfg : function
     """
-    
-    setattr(cfg, cfg_name, default)
-#_set_cfg_value('max_to_keep', 10, cfg)
 
+    setattr(cfg, cfg_name, default)
+
+
+# _set_cfg_value('max_to_keep', 10, cfg)
+# 指定对象的指定属性的值
 _set_cfg_value('step_str',
                ('Step {step}/{total_steps}: loss = {loss_value:.2f}; '
                 'lr = {lr_value:.2e}; '
                 '{sec_per_batch:.3f} sec (per Batch); '
-                '{examples_per_sec:.1f} imgs/sec'),
-               cfg)
+                '{examples_per_sec:.1f} imgs/sec'), cfg
+               )
 
 
 def load_plugins():
@@ -323,8 +333,7 @@ def load_plugins():
         import imp
         for pyfile in pyfiles:
             logging.info('Loaded plugin "%s".', pyfile)
-            imp.load_source(os.path.splitext(os.path.basename(pyfile))[0],
-                            pyfile)
+            imp.load_source(os.path.splitext(os.path.basename(pyfile))[0], pyfile)
 
 
 def load_labeled_files_json(json_datafile_path):
@@ -370,7 +379,7 @@ def overlay_segmentation(input_image, segmentation, color_dict):
         An image of shape [width, height, 3].
     segmentation : numpy.array
         Segmentation of shape [width, height].
-    color_changes : dict
+    color_dict : dict
         The key is the class and the value is the color which will be used in
         the overlay. Each color has to be a tuple (r, g, b, a) with
         r, g, b, a in {0, 1, ..., 255}.
@@ -599,7 +608,7 @@ def load_segmentation_mask(hypes, gt_image_path):
     is not in RGB mode it will get converted to RGB. This is important to know
     for the colors in hypes['classes'].
     """
-    img = imageio.imread(gt_image_path, mode='RGB') #scipy.misc.imread(gt_image_path, mode='RGB')
+    img = imageio.imread(gt_image_path, mode='RGB')  # scipy.misc.imread(gt_image_path, mode='RGB')
 
     # map colors to classes
     color2class_dict, default_class = get_color2class(hypes)

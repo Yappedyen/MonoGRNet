@@ -6,9 +6,7 @@
 import logging
 import os.path
 import sys
-
-import scipy as scp
-import scipy.misc
+import imageio
 
 # configure logging
 if 'TV_IS_DEV' in os.environ and os.environ['TV_IS_DEV']:
@@ -24,23 +22,23 @@ else:
 import numpy as np
 import tensorflow as tf
 
-import tensorvision.utils as utils
-import tensorvision.core as core
+import include.tensorvision.utils as utils
+import include.tensorvision.core as core
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('logdir', None,
-                    'Directory where logs are stored.')
+flags.DEFINE_string('logdir', None, 'Directory where logs are stored.')
 
 
 def _write_images_to_logdir(images, logdir):
+
     logdir = os.path.join(logdir, "images/")
     if not os.path.exists(logdir):
         os.mkdir(logdir)
     for name, image in images:
         save_file = os.path.join(logdir, name)
-        scp.misc.imsave(save_file, image)
+        imageio.imwrite(save_file, image)
 
 
 def do_analyze(logdir, base_path=None):
@@ -54,6 +52,7 @@ def do_analyze(logdir, base_path=None):
     ----------
     logdir : string
         Directory with logs.
+    base_path:
     """
     hypes = utils.load_hypes_from_logdir(logdir)
     modules = utils.load_modules_from_logdir(logdir)
@@ -69,8 +68,7 @@ def do_analyze(logdir, base_path=None):
         image_pl = tf.placeholder(tf.float32)
         image = tf.expand_dims(image_pl, 0)
         image.set_shape([1, None, None, 3])
-        inf_out = core.build_inference_graph(hypes, modules,
-                                             image=image)
+        inf_out = core.build_inference_graph(hypes, modules, image=image)
 
         # Create a session for running Ops on the Graph.
         sess = tf.Session()
@@ -418,7 +416,7 @@ def get_color_distribution(labeled_dataset):
     """
     colors = {}
     for item in labeled_dataset:
-        im = scipy.misc.imread(item['mask'], flatten=False, mode='RGB')
+        im = imageio.imread(item['mask'], flatten=False, mode='RGB')
         for y in range(im.shape[0]):
             for x in range(im.shape[1]):
                 color = tuple(im[y][x])
