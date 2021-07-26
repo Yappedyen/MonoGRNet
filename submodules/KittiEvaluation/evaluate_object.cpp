@@ -757,16 +757,16 @@ void saveAndPlotPlots(string dir_name,string file_name,string obj_type,vector<do
 
     // run gnuplot => create png + eps
     sprintf(command,"cd %s; gnuplot %s",dir_name.c_str(),(file_name + ".gp").c_str());
-    if(system(command) != -1);
+    system(command);
   }
 
   // create pdf and crop
   sprintf(command,"cd %s; ps2pdf %s.eps %s_large.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  if(system(command) != -1);
+  system(command);
   sprintf(command,"cd %s; pdfcrop %s_large.pdf %s.pdf",dir_name.c_str(),file_name.c_str(),file_name.c_str());
-  if(system(command) != -1);
+  system(command);
   sprintf(command,"cd %s; rm %s_large.pdf",dir_name.c_str(),file_name.c_str());
-  if(system(command) != -1);
+  system(command);
 }
 
 bool eval(string result_sha,Mail* mail){
@@ -780,7 +780,7 @@ bool eval(string result_sha,Mail* mail){
   string plot_dir       = result_dir + "/plot";
 
   // create output directories
-  if(system(("mkdir " + plot_dir).c_str()) != -1);
+  system(("mkdir " + plot_dir).c_str());
 
   // hold detections and ground truth in memory
   vector< vector<tGroundtruth> > groundtruth;
@@ -919,7 +919,7 @@ int32_t main (int32_t argc,char *argv[]) {
     mail->msg("Your evaluation results are available at:");
     mail->msg("http://www.cvlibs.net/datasets/kitti/user_submit_check_login.php?benchmark=object&user=%s&result=%s",argv[2], result_sha.c_str());
   } else {
-    if(system(("rm -r results/" + result_sha).c_str())!= -1);
+    system(("rm -r results/" + result_sha).c_str());
     mail->msg("An error occured while processing your results.");
     mail->msg("Please make sure that the data in your zip archive has the right format!");
   }
