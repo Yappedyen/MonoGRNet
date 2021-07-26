@@ -22,7 +22,7 @@ Please cite this paper if you find the repository helpful:
 ```
 
 ### Prerequisites
-- Ubuntu 20.04
+- Ubuntu 18.04
 - Python 3.7
 - Tensorflow 1.4
 
@@ -61,7 +61,10 @@ Run the training script and specify the GPU to use:
 python train.py --gpus 0
 ```
 The evaluation is done during training. You can adjust the evaluation intervals in `hypes/kittiBox.json`.
-
+At the same time, you can open tensorboard see the graph and the processing of training. Open Terminal:
+```bash
+tensorboard --logdir=/home/.../MonoGRNet/outputs/kittiBox
+```
 ### Visualization
 ```bash
 cd visualize && mkdir visualize

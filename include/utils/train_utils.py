@@ -102,7 +102,7 @@ def compute_rectangels(H, confidences, boxes, depths, locations, use_stitching=F
     all_rects_r = [r for row in all_rects for cell in row for r in cell]
    # NMS
     if use_stitching:
-        from stitch_wrapper import stitch_rects
+        from .stitch_wrapper import stitch_rects
         acc_rects = stitch_rects(all_rects, tau)
     else:
         acc_rects = all_rects_r
