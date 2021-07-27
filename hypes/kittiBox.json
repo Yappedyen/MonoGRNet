@@ -6,11 +6,6 @@
     "optimizer_file" : "../optimizer/generic_optimizer.py",
     "evaluator_file" : "../evals/kitti_eval.py"
     },
-    "dirs": {
-        "data_dir": "/home/yappedyen/MonoGRNet/hypes/../data",
-        "base_path": "/home/yappedyen/MonoGRNet/hypes",
-        "output_dir": "/home/yappedyen/MonoGRNet/hypes/../outputs/kittiBox"
-    },
     "data": {
         "train_file": "KittiBox/train.txt",
         "val_file": "KittiBox/val.txt",
