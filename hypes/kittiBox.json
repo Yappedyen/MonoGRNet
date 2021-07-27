@@ -14,9 +14,9 @@
         "label_dir": "KittiBox/training/label_2"
     },
     "logging": {
-        "display_iter": 100,
-        "write_iter": 100,
-        "eval_iter": 928,
+        "display_iter": 200,
+        "write_iter": 200,
+        "eval_iter": 9280,
         "save_iter": 9280,
         "max_to_keep": 10,
         "image_iter": 46400,
