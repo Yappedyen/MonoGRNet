@@ -484,12 +484,17 @@ def continue_training(logdir):
         with tf.name_scope('Validation'):
             tf.get_variable_scope().reuse_variables()
             image_pl = tf.placeholder(tf.float32)
+            calib = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 3, 4])
+            xy_scale = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 2])
+
+            # 在axis=0上增加一个维度[1,image_pl]
             image = tf.expand_dims(image_pl, 0)
-            image.set_shape([1, None, None, 3])
-            inf_out = core.build_inference_graph(hypes, modules,
-                                                 image=image)
+            image.set_shape([1, 384, 1248, 3])
+            inf_out = core.build_inference_graph(hypes, modules, image, calib, xy_scale)
             tv_graph['image_pl'] = image_pl
             tv_graph['inf_out'] = inf_out
+            tv_graph['calib_pl'] = calib
+            tv_graph['xy_scale_pl'] = xy_scale
 
         # Start the data load
         modules['input'].start_enqueuing_threads(hypes, queue, 'train', sess)

@@ -26,6 +26,9 @@ import include.tensorvision.train as train
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
+flags.DEFINE_string('logdir', None,
+                    'Append a name Tag to run.')
+
 
 def main(_):
     """Run main function for continue Training."""
@@ -52,3 +55,7 @@ def main(_):
 
     logging.info("Starting to analyze model in '%s'", FLAGS.logdir)
     train.continue_training(FLAGS.logdir)
+
+
+if __name__ == '__main__':
+    tf.app.run()

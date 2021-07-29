@@ -595,6 +595,8 @@ def decoder(hyp, logits, labels, train):
         # Dictionary filled with return values
         dlogits = {}
         current_pred_boxes = pred_boxes
+        # rezoom层,利用高分辨率特征来预测边界框位置上的残差。
+        # 通过将更高分辨率的VGG特征的子集(156×48)与隐藏特征(39×12)连接并在其上应用1×1卷积来完成。
         if hyp['use_rezoom']:
             rezoom_input = pred_boxes, pred_logits, pred_confidences, \
                            pred_depths, pred_locations, early_feat, hidden_output

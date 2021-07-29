@@ -102,5 +102,6 @@ def main(_):
     train_dir = utils.get_train_dir()
     evaluate(train_dir)
 
+
 if __name__ == '__main__':
     tf.app.run()

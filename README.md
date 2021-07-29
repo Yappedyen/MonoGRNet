@@ -65,6 +65,12 @@ At the same time, you can open tensorboard see the graph and the processing of t
 ```bash
 tensorboard --logdir=/home/.../MonoGRNet/outputs/kittiBox
 ```
+
+After training, you can continue training after adjust the max_steps in '/outputs/KittiBox/model_files/hypes.json'.
+Then use 
+```bash
+python continue.py --logdir=/home/.../outputs/kittiBox --gpu=0
+```
 ### Visualization
 ```bash
 cd visualize && mkdir visualize

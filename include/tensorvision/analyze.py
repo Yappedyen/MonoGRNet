@@ -65,10 +65,15 @@ def do_analyze(logdir, base_path=None):
 
         # prepaire the tv session
 
+        tf.get_variable_scope().reuse_variables()
         image_pl = tf.placeholder(tf.float32)
+        calib = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 3, 4])
+        xy_scale = tf.placeholder(tf.float32, shape=[1, hypes['grid_height'], hypes['grid_width'], 2])
+
+        # 在axis=0上增加一个维度[1,image_pl]
         image = tf.expand_dims(image_pl, 0)
-        image.set_shape([1, None, None, 3])
-        inf_out = core.build_inference_graph(hypes, modules, image=image)
+        image.set_shape([1, 384, 1248, 3])
+        inf_out = core.build_inference_graph(hypes, modules, image, calib, xy_scale)
 
         # Create a session for running Ops on the Graph.
         sess = tf.Session()
@@ -171,7 +176,7 @@ def get_accuracy(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_accuracy(n)
     0.93
     """
@@ -197,7 +202,7 @@ def get_mean_accuracy(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_mean_accuracy(n)
     0.8882575757575758
     """
@@ -226,7 +231,7 @@ def get_mean_iou(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_mean_iou(n)
     0.7552287581699346
     """
@@ -257,7 +262,7 @@ def get_frequency_weighted_iou(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_frequency_weighted_iou(n)
     0.8821437908496732
     """
@@ -290,7 +295,7 @@ def get_precision(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_precision(n)
     0.9764705882352941
     """
@@ -316,7 +321,7 @@ def get_recall(n):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_recall(n)
     0.9431818181818182
     """
@@ -349,7 +354,7 @@ def get_f_score(n, beta=1):
 
     Examples
     --------
-    >>> n = {0: {0: 10, 1: 2}, 1: {0: 5, 1: 83}}
+    >>> n = {0: {0: 40, 1: 2}, 1: {0: 5, 1: 83}}
     >>> get_recall(n)
     0.9431818181818182
     """
@@ -465,7 +470,7 @@ def main(_):
         exit(1)
 
     utils.set_gpus_to_use()
-    utils.load_plugins()
+    # utils.load_plugins()
 
     logging.info("Starting to analyze model in '%s'", FLAGS.logdir)
     do_analyze(FLAGS.logdir)
