@@ -23,7 +23,7 @@ Please cite this paper if you find the repository helpful:
 
 ### Prerequisites
 - Ubuntu 18.04
-- Python 3.7
+- Python 3.6
 - Tensorflow 1.4
 
 ### Install
@@ -66,7 +66,7 @@ At the same time, you can open tensorboard see the graph and the processing of t
 tensorboard --logdir=/home/.../MonoGRNet/outputs/kittiBox
 ```
 
-After training, you can continue training after adjust the max_steps in '/outputs/KittiBox/model_files/hypes.json'.
+After training, you can continue training after adjust the max_steps and opt in '/outputs/KittiBox/model_files/hypes.json'.
 Then use 
 ```bash
 python continue.py --logdir=/home/.../outputs/kittiBox --gpu=0
