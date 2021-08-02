@@ -82,8 +82,8 @@ def _jitter(im_obj, anno, jitter_pixel=24):
     im = np.array(im_obj)
     trans = np.random.normal(scale=jitter_pixel, size=(2, ))
     height_jitter, width_jitter = np.clip(trans,
-                                          a_min = -jitter_pixel * 2,
-                                          a_max = +jitter_pixel * 2).astype(np.int32)
+                                          a_min=-jitter_pixel * 2,
+                                          a_max=+jitter_pixel * 2).astype(np.int32)
     image_jitter = np.zeros(shape=np.shape(im), dtype=np.uint8)
     image_means = im.mean(axis=(0, 1), keepdims=True).astype(np.uint8)
     image_jitter += image_means
@@ -148,8 +148,8 @@ def read_kitti_anno(label_file, calib_file, detect_truck):
     """
     labels = [line.rstrip().split(' ') for line in open(label_file)]
     # label_file = '/home/l4v/MonoGRNet/data/KittiBox/training/label_2/007474.txt'
-    label_file_split = label_file.rstrip().split('/')
-    index = label_file_split[-1].split('.')[0]
+    # label_file_split = label_file.rstrip().split('/')
+    # index = label_file_split[-1].split('.')[0]
     # import pdb
     # pdb.set_trace()
     calibs = [line.rstrip().split(' ') for line in open(calib_file)]
@@ -344,7 +344,7 @@ def create_queues(hypes, phase):
     """Create Queues."""
 
     dtypes = [tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, tf.float32]
-    grid_size = hypes['grid_width'] * hypes['grid_height']
+    # grid_size = hypes['grid_width'] * hypes['grid_height']
     shapes = ([hypes['image_height'], hypes['image_width'], 3],  # image
               [hypes['grid_height'], hypes['grid_width']],       # confs
               [hypes['grid_height'], hypes['grid_width'], 11],  # boxes的11 个参数
@@ -453,6 +453,7 @@ def inputs(hypes, q, phase):
         assert("Bad phase: {}".format(phase))
 
 
+# test the gen
 if __name__ == '__main__':
     with open("../hypes/kittiBox.json", 'r') as f:
         logging.info("f: %s", f)

@@ -31,7 +31,7 @@ class Reader(object):
                 lines = label_file.readlines()
                 for line in lines:
                     elements = line.split(' ')
-                    if not elements[0] == 'Car' and not elements[0] =='car':
+                    if not elements[0] == 'Car' and not elements[0] == 'car':
                         continue
                     bbox = np.array(elements[4: 8], dtype=np.float32)
                     dimensions = np.array(elements[8: 11], dtype=np.float32)
@@ -43,5 +43,3 @@ class Reader(object):
                                               'rotation_y': rotation_y})
             self.data[index] = data
         return
-
-

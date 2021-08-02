@@ -100,7 +100,7 @@ for index in show_indices:
     image = Image.open(data_label['image_path'])
     fig = plt.figure(figsize=(14, 8))
 
-    ax = fig.gca(projection='3d')
+    ax = plt.plot(projection='3d')
     ax.grid(False)
     ax.set_axis_off()
     ax.set_xlim((-10, 10))

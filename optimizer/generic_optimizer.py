@@ -100,7 +100,8 @@ def training(hypes, loss, global_step, learning_rate):
             grads_and_vars = opt.compute_gradients(total_loss, tf.get_collection('refine'))     
 
         elif refine_location:
-            grads_and_vars = opt.compute_gradients(total_loss, tf.get_collection('refine') + tf.get_collection('location'))
+            grads_and_vars = opt.compute_gradients(total_loss, tf.get_collection('refine')
+                                                   + tf.get_collection('location'))
 
         # batch_norm
         if hypes['clip_norm'] > 0:

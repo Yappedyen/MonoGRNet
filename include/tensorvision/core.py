@@ -170,10 +170,10 @@ def start_tv_session(hypes):
         summary_op = None
 
     # Create a saver for writing training checkpoints.
-    if 'keep_checkpoint_every_n_hours' in hypes['solver']:
-        kc = hypes['solver']['keep_checkpoint_every_n_hours']
-    else:
-        kc = 10000.0
+    # if 'keep_checkpoint_every_n_hours' in hypes['solver']:
+    #     kc = hypes['solver']['keep_checkpoint_every_n_hours']
+    # else:
+    #     kc = 10000.0
 
     # 保存和加载模型实例化一个 tf.train.Saver
     # 调用一次保存操作会创建后3个数据文件并创建一个检查点（checkpoint）文件，简单理解就是权重等参数被保存到 .ckpt.data 文件中，以字典的形式；

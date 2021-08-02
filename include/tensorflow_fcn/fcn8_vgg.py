@@ -436,8 +436,7 @@ class FCN8VGG:
         if not tf.compat.v1.get_variable_scope().reuse:
             weight_decay = tf.multiply(tf.nn.l2_loss(var), self.wd,
                                        name='weight_loss')
-            tf.compat.v1.add_to_collection(tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES,
-                                 weight_decay)
+            tf.compat.v1.add_to_collection(tf.compat.v1.GraphKeys.REGULARIZATION_LOSSES, weight_decay)
         _variable_summaries(var)
         return var
 
@@ -534,8 +533,7 @@ class FCN8VGG:
 
     def _bias_variable(self, shape, constant=0.0):
         initializer = tf.constant_initializer(constant)
-        var = tf.compat.v1.get_variable(name='biases', shape=shape,
-                              initializer=initializer)
+        var = tf.compat.v1.get_variable(name='biases', shape=shape, initializer=initializer)
         _variable_summaries(var)
         return var
 
