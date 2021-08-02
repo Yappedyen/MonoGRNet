@@ -24,8 +24,9 @@ Please cite this paper if you find the repository helpful:
 ### Prerequisites
 - Ubuntu 18.04
 - Python 3.6
-- Tensorflow 1.4
+- Tensorflow 1.14
 
+GPU-1080Ti
 ### Install
 Clone this repository
 ```bash
